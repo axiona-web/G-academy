@@ -249,7 +249,8 @@
   mentorSettings() {
     App.modal(`
       <h3 class="font-bold text-lg text-zinc-900 dark:text-white mb-1">Nastavenia AI Mentora</h3>
-      <p class="text-xs text-zinc-500 mb-4">Mentor funguje aj offline. Vlastný API kľúč (uložený len lokálne v tvojom prehliadači) odomkne plnohodnotné AI odpovede.</p>
+      <p class="text-xs text-zinc-500 mb-2">Mentor funguje aj offline. Na verejnom webe s prihlásením beží AI cez <b>zabezpečenú serverovú proxy</b> (kľúč nikdy neopúšťa server).</p>
+      <p class="text-xs rounded-xl bg-amber-500/10 border border-amber-500/20 p-2.5 mb-4 text-amber-600 dark:text-amber-500">⚠️ Vlastný kľúč nižšie je len <b>lokálna experimentálna funkcia</b> — ukladá sa do tvojho prehliadača a je z neho čitateľný. Nepoužívaj ho na zdieľanom počítači a nikdy nie kľúč, ktorý platí niekto iný.</p>
       <label class="text-xs font-semibold text-zinc-500">Poskytovateľ</label>
       <select id="api-provider" class="w-full mt-1 mb-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#131316] px-3 py-2.5 text-sm">
         <option value="anthropic" ${App.state.apiProvider === 'anthropic' ? 'selected' : ''}>Anthropic (Claude)</option>

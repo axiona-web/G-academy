@@ -200,6 +200,14 @@ const Roleplay = {
     s.arg += Math.min(2, argHits >= 2 ? 2 : argHits);
     s.comm += Math.min(2, commHits);
     s.prof += profScore;
+    /* Rubrika: zaznamenaj dôvody odpočtov (kalibrované hodnotenie) */
+    if (!this.session.deductions) this.session.deductions = [];
+    const round = this.session.round;
+    if (expertHits === 0) this.session.deductions.push(`Kolo ${round}: −2 Odbornosť — odpoveď nereagovala na konkrétne problémy klienta (${c.problems.map(p => DATA.problemLib[p].txt).join(', ')})`);
+    if (argHits < 2) this.session.deductions.push(`Kolo ${round}: −${2 - Math.min(2, argHits)} Argumentácia — chýbali dáta, čísla alebo konkrétny postup krokov`);
+    if (commHits < 2) this.session.deductions.push(`Kolo ${round}: −${2 - Math.min(2, commHits)} Komunikácia — ${!t.includes('?') ? 'žiadna otázka na klienta' : 'príliš stručná odpoveď'}`);
+    if (badPromise) this.session.deductions.push(`Kolo ${round}: −2 Profesionalita — ZAKÁZANÉ TVRDENIE (garancia/prvé miesto/nereálny termín)`);
+    else if (profScore < 2) this.session.deductions.push(`Kolo ${round}: −1 Profesionalita — chýbalo nastavenie realistických očakávaní`);
     // nálada klienta
     const roundScore = Math.min(2, expertHits) + profScore;
     if (badPromise) this.session.mood = 'angry';
@@ -240,8 +248,13 @@ const Roleplay = {
         <div class="flex items-center gap-2 text-sm mb-1.5"><span class="w-36">${n}</span>
         <div class="flex-1 h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden"><div class="h-full rounded-full ${pct(k) >= 60 ? 'bg-emerald-500' : 'bg-amber-500'}" style="width:${pct(k)}%"></div></div>
         <b class="w-10 text-right text-xs">${pct(k)} %</b></div>`).join('')}
+      ${this.session.deductions && this.session.deductions.length ? `
+      <div class="mt-3 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-zinc-700 dark:text-zinc-300">
+        <b class="text-amber-500">📋 Rubrika — dôvody odpočtov:</b>
+        <ul class="mt-1 space-y-0.5">${this.session.deductions.slice(0, 8).map(d => `<li>• ${d}</li>`).join('')}</ul>
+      </div>` : ''}
       <div class="mt-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-3 text-xs text-zinc-700 dark:text-zinc-300">
-        <b class="text-indigo-400">Čo klient potreboval počuť:</b> ${c.problems.map(p => DATA.problemLib[p].advice).join(' · ')}
+        <b class="text-indigo-400">Referenčné riešenie (čo klient potreboval počuť):</b> ${c.problems.map(p => DATA.problemLib[p].advice).join(' · ')}
       </div>`;
     this.session = null;
     return html;

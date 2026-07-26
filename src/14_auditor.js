@@ -295,7 +295,7 @@ Views.showAudit = function (i) {
       </details>`).join('')}
     </div>
   </div>`;
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 /* GBP wizard v modáli */

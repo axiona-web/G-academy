@@ -27,7 +27,11 @@ const Auth = {
 
   /* ── Bootstrap aplikácie ── */
   async boot() {
-    if (!this.configured()) { App.init(); return; }           // lokálny režim
+    if (!this.configured()) {
+      // lokálny režim — aplikuj lokálne obsahové úpravy a štartuj
+      if (typeof Content !== 'undefined') await Content.load();
+      App.init(); return;
+    }
     this.sb = window.supabase.createClient(GACADEMY_CONFIG.SUPABASE_URL, GACADEMY_CONFIG.SUPABASE_ANON_KEY);
     const { data: { session } } = await this.sb.auth.getSession();
     if (session) await this.onLogin(session.user);
@@ -60,6 +64,8 @@ const Auth = {
     App.save = () => { origSave(); this.scheduleSync(); };
     window.addEventListener('beforeunload', () => this.syncNow());
     document.getElementById('auth-gate')?.remove();
+    // Obsahové úpravy (admin editor) — aplikovať pred prvým renderom
+    if (typeof Content !== 'undefined') await Content.load();
     App.init();
     this.renderUserChip();
     this.syncNow();

@@ -113,6 +113,23 @@ update public.profiles set role = 'admin' where email = 'mdominik01@gmail.com';
 2. Zlož nový `index.html` (návod v README) alebo mi napíš — upravím a pripravím súbor.
 3. V GitHub repozitári klikni na `index.html` → ikona ceruzky / **Upload files** → nahraj novú verziu → **Commit changes**. Web sa obnoví do minúty.
 
+## ČASŤ D — Rozšírenia Fázy „Stabilita" (voliteľné, ~15 min)
+
+### D1. Databáza pre editor obsahu, logy a AI limity
+1. Supabase → **SQL Editor** → **New query** → vlož celý obsah súboru **`supabase-setup-2.sql`** → **Run**.
+2. Tým sa aktivuje: admin editor obsahu (upravuješ lekcie/otázky priamo v aplikácii v sekcii Admin), logovanie chýb a limity AI.
+
+### D2. Zabezpečená AI proxy (odporúčané pre verejný web)
+Vďaka nej môžu AI mentora používať všetci prihlásení študenti — tvoj API kľúč pritom **nikdy neopustí server**:
+1. Supabase → **Edge Functions** → **Deploy a new function** → názov: `ai-mentor`.
+2. Vlož obsah súboru **`supabase-functions-ai-mentor.ts`** a klikni **Deploy**.
+3. **Project Settings → Edge Functions → Secrets → Add new secret:**
+   - Name: `ANTHROPIC_API_KEY`
+   - Value: tvoj kľúč z console.anthropic.com (Settings → API Keys)
+4. Hotovo — aplikácia proxy automaticky použije po prihlásení. Denný limit je 40 správ na používateľa (dá sa zmeniť v kóde funkcie, konštanta `DAILY_LIMIT`).
+
+Bez tohto kroku mentor beží v offline režime (znalostná báza kurzu) — všetko ostatné funguje normálne.
+
 ## Riešenie problémov
 
 | Problém | Riešenie |
