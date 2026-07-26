@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<!--
+  ═══════════════════════════════════════════════════════════════════
+  G-ACADEMY — Interaktívna vzdelávacia platforma
+  Google Business Profile · Google Search Console · Google Ads
+  ───────────────────────────────────────────────────────────────────
+  Jednosúborová aplikácia (SPA) bez backendu.
+  Technológie: Tailwind CSS (CDN), Chart.js (CDN), Lucide Icons (CDN),
+  Vanilla JS (komponentová architektúra), localStorage, PWA.
+  ═══════════════════════════════════════════════════════════════════
+-->
+<html lang="sk" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>G-Academy — Google Marketing Akadémia</title>
+<meta name="description" content="Kompletná príprava na Google Business Profile, Search Console a Google Ads — od základov po expertnú úroveň.">
+<meta name="theme-color" content="#09090b">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%236366f1'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>G</text></svg>">
+
+<!-- Tailwind CSS (CDN build s podporou dark mode cez triedu) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+        colors: {
+          // Zinc-based neutrálna paleta v štýle Linear/Vercel
+          surface: { light: '#fafafa', dark: '#09090b' },
+          card:    { light: '#ffffff', dark: '#131316' },
+          accent:  { DEFAULT: '#6366f1', hover: '#4f46e5' },
+        },
+        animation: {
+          'fade-in': 'fadeIn .35s ease both',
+          'slide-up': 'slideUp .4s cubic-bezier(.16,1,.3,1) both',
+          'pop': 'pop .3s cubic-bezier(.34,1.56,.64,1) both',
+        },
+        keyframes: {
+          fadeIn: { from: { opacity: 0 }, to: { opacity: 1 } },
+          slideUp: { from: { opacity: 0, transform: 'translateY(14px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
+          pop: { from: { opacity: 0, transform: 'scale(.92)' }, to: { opacity: 1, transform: 'scale(1)' } },
+        },
+      }
+    }
+  };
+</script>
+
+<!-- Chart.js pre grafy štatistík -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Supabase klient (registrácia/prihlásenie + cloud sync) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- Konfigurácia nasadenia (Supabase kľúče) — uprav súbor config.js -->
+<script src="config.js"></script>
+<!-- Lucide ikony -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<!-- Inter font -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+  /* ── Základné štýly a typografia ─────────────────────────────── */
+  html { scroll-behavior: smooth; }
+  body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  ::selection { background: #6366f155; }
+
+  /* Tenký decentný scrollbar */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #71717a55; border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ── "Prose" štýl pre teóriu lekcií ──────────────────────────── */
+  .prose-lesson h3 { font-weight: 700; font-size: 1.05rem; margin: 1.4em 0 .5em; letter-spacing: -.01em; }
+  .prose-lesson p  { margin: .65em 0; line-height: 1.75; }
+  .prose-lesson ul { margin: .65em 0; padding-left: 1.25em; list-style: disc; }
+  .prose-lesson ol { margin: .65em 0; padding-left: 1.25em; list-style: decimal; }
+  .prose-lesson li { margin: .35em 0; line-height: 1.65; }
+  .prose-lesson strong { font-weight: 600; }
+  .prose-lesson code { font-size: .85em; padding: .15em .4em; border-radius: 5px; background: #6366f118; color: #818cf8; font-family: ui-monospace, monospace; }
+  .prose-lesson .tip, .prose-lesson .warn, .prose-lesson .ex {
+    border-radius: 12px; padding: .8em 1em; margin: 1em 0; font-size: .92rem; line-height: 1.65; border: 1px solid;
+  }
+  .prose-lesson .tip  { background: #10b98112; border-color: #10b98133; }
+  .prose-lesson .warn { background: #f59e0b12; border-color: #f59e0b33; }
+  .prose-lesson .ex   { background: #6366f110; border-color: #6366f133; }
+  .prose-lesson .tip::before  { content: "💡 Tip z praxe"; display: block; font-weight: 600; margin-bottom: .3em; color: #10b981; }
+  .prose-lesson .warn::before { content: "⚠️ Častá chyba"; display: block; font-weight: 600; margin-bottom: .3em; color: #f59e0b; }
+  .prose-lesson .ex::before   { content: "🧪 Praktická ukážka"; display: block; font-weight: 600; margin-bottom: .3em; color: #818cf8; }
+  .prose-lesson table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: .9rem; }
+  .prose-lesson th, .prose-lesson td { border: 1px solid #71717a33; padding: .5em .7em; text-align: left; }
+  .prose-lesson th { background: #71717a15; font-weight: 600; }
+
+  /* ── Flashcard flip animácia ─────────────────────────────────── */
+  .fc-scene { perspective: 1200px; }
+  .fc-card { transition: transform .55s cubic-bezier(.4,.2,.2,1); transform-style: preserve-3d; position: relative; }
+  .fc-card.flipped { transform: rotateY(180deg); }
+  .fc-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; position: absolute; inset: 0; }
+  .fc-back { transform: rotateY(180deg); }
+
+  /* ── Progress ring (SVG) ─────────────────────────────────────── */
+  .ring-anim { transition: stroke-dashoffset 1s cubic-bezier(.16,1,.3,1); }
+
+  /* ── Drobnosti ───────────────────────────────────────────────── */
+  .nav-item.active { background: #6366f11a; color: #818cf8; }
+  html:not(.dark) .nav-item.active { color: #4f46e5; }
+  .card-hover { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+  .card-hover:hover { transform: translateY(-2px); border-color: #6366f166; }
+  [x-view] { display: none; }
+  [x-view].visible { display: block; }
+  .chip { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 600; padding: .2rem .6rem; border-radius: 999px; }
+  .btn-press:active { transform: scale(.97); }
+</style>
+</head>
