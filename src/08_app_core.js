@@ -25,6 +25,14 @@ const App = {
       theme: 'dark',
       apiKey: '', apiProvider: 'anthropic',
       mentorHistory: [],
+      /* Learning engine (etapa 2) */
+      plan: null,            // denný plán mentora
+      quests: null,          // daily/weekly/monthly questy
+      skillPoints: 0,
+      roleplaysDone: 0,      // počet odohraných klientskych rozhovorov
+      master: {},            // Master Mode: { clientId: {step, score, log[], done} }
+      audits: [],            // história AI auditov (pre portfolio builder)
+      interviews: [],        // história pohovorov
     };
   },
 
@@ -143,10 +151,14 @@ const App = {
   /* ── Router ── */
   NAV: [
     { id: 'dashboard', name: 'Prehľad', icon: 'layout-dashboard' },
+    { id: 'skilltree', name: 'Skill Tree', icon: 'git-branch' },
     { id: 'modules', name: 'Moduly', icon: 'book-open' },
     { id: 'tests', name: 'Testy', icon: 'clipboard-check' },
     { id: 'flashcards', name: 'Flashcards', icon: 'layers' },
     { id: 'projects', name: 'Projekty', icon: 'briefcase' },
+    { id: 'auditor', name: 'AI Auditor', icon: 'scan-search' },
+    { id: 'agency', name: 'Agentúra', icon: 'building-2' },
+    { id: 'interview', name: 'Pohovor', icon: 'mic' },
     { id: 'certs', name: 'Certifikácie', icon: 'award' },
     { id: 'glossary', name: 'Slovník', icon: 'book-a' },
     { id: 'career', name: 'Kariéra', icon: 'trending-up' },
@@ -243,6 +255,8 @@ const App = {
     // týždenný cieľ
     const week = this.lessonsThisWeek();
     if (week === this.state.weeklyGoalLessons) this.toast('📅 Týždenný cieľ splnený!', `${week} lekcií tento týždeň`, '');
+    // learning engine: questy a denný plán
+    if (typeof Engine !== 'undefined') { Engine.autoTickPlan(); Engine.questProgress('weekly-check'); Engine.questProgress('monthly-check'); }
     this.render();
   },
   lessonsThisWeek() {
@@ -255,8 +269,9 @@ const App = {
      Testy neukazujú správne odpovede priebežne — vyhodnotenie s
      vysvetleniami až na konci (ako reálne certifikácie). */
   quiz: null,
+  _quizTimer: null,
   startQuiz(type, refId) {
-    let questions = [], title = '', quizId = '';
+    let questions = [], title = '', quizId = '', limitSec = 0;
     if (type === 'lesson') {
       const l = this.getLesson(refId);
       questions = l.quiz.map((q, i) => ({ ...q, src: l.id + ':' + i }));
@@ -270,11 +285,31 @@ const App = {
       questions = this.sample(pool, 100);
       title = 'Záverečný test (100 otázok)'; quizId = 'final';
     } else if (type === 'cert') {
+      // Mock certifikačná skúška — reálne podmienky Skillshopu: 50 otázok / 75 minút
       const pool = this.moduleLessons('ads').flatMap(l => l.quiz.map((q, i) => ({ ...q, src: l.id + ':' + i })));
       questions = this.sample(pool, 50);
-      title = 'Mock certifikačný test (Ads, 50 otázok)'; quizId = 'cert-mock';
+      title = 'Mock certifikačný test (Ads, 50 otázok)'; quizId = 'cert-mock'; limitSec = 75 * 60;
+    } else if (type === 'internal') {
+      // Interná certifikačná skúška (GBP/GSC Expert): 40 otázok / 50 minút, 80 %
+      const cert = DATA.certs.find(c => c.id === refId);
+      const pool = this.moduleLessons(cert.examModule).flatMap(l => l.quiz.map((q, i) => ({ ...q, src: l.id + ':' + i })));
+      questions = this.sample(pool, 40);
+      title = 'Skúška: ' + cert.name; quizId = 'internal:' + refId; limitSec = 50 * 60;
     }
-    this.quiz = { type, refId, quizId, title, questions, answers: new Array(questions.length).fill(null), idx: 0 };
+    this.quiz = { type, refId, quizId, title, questions, answers: new Array(questions.length).fill(null), idx: 0, limitSec, endsAt: limitSec ? Date.now() + limitSec * 1000 : 0 };
+    // Časomiera: každú sekundu aktualizuj displej; po vypršaní auto-vyhodnotenie
+    clearInterval(this._quizTimer);
+    if (limitSec) this._quizTimer = setInterval(() => {
+      const q = this.quiz;
+      if (!q || q.finished) { clearInterval(this._quizTimer); return; }
+      const left = Math.max(0, Math.round((q.endsAt - Date.now()) / 1000));
+      const el = document.getElementById('quiz-timer');
+      if (el) {
+        el.textContent = '⏱ ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+        el.className = left < 300 ? 'text-xs font-bold text-red-500' : 'text-xs font-bold text-zinc-500';
+      }
+      if (left <= 0) { this.toast('⏱ Čas vypršal', 'Test sa vyhodnocuje', ''); this.finishQuiz(); }
+    }, 1000);
     Views.renderQuiz();
   },
   sample(arr, n) {
@@ -292,8 +327,15 @@ const App = {
   },
   finishQuiz() {
     const q = this.quiz;
+    if (!q || q.finished) return;
+    clearInterval(this._quizTimer);
     const score = q.questions.reduce((s, question, i) => s + (q.answers[i] === question.c ? 1 : 0), 0);
     const total = q.questions.length;
+    // Interná certifikácia: úspech ≥ 80 % automaticky udelí certifikát
+    if (q.type === 'internal' && score / total >= 0.8 && !(this.state.certs[q.refId] || {}).done) {
+      this.state.certs[q.refId] = { done: true, date: Date.now() };
+      this.toast('🎓 Certifikácia získaná!', DATA.certs.find(c => c.id === q.refId).name, '');
+    }
     // uloženie najlepšieho výsledku + histórie
     const prev = this.state.quizResults[q.quizId];
     if (!prev || score / total > prev.score / prev.total) this.state.quizResults[q.quizId] = { score, total, date: Date.now() };

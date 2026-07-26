@@ -4,7 +4,7 @@
    Poznámka: SW funguje len cez http(s) — pri otvorení cez file://
    sa aplikácia správa normálne, len bez offline cache.
    ═══════════════════════════════════════════════════════════════════ */
-const CACHE = 'gacademy-v2';
+const CACHE = 'gacademy-v3';
 const ASSETS = [
   './index.html',
   './manifest.json',

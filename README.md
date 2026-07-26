@@ -21,8 +21,15 @@ Stačí otvoriť **`index.html`** dvojklikom v prehliadači. Žiadna inštaláci
 | **Slovník** | 41 pojmov — jednoduché aj technické vysvetlenie |
 | **Kariéra** | pozície, platy, kariérny postup, chýbajúce certifikácie |
 | **Gamifikácia** | XP, 5 úrovní (Začiatočník→Expert), 21 achievementov, denné/týždenné ciele, streak |
-| **AI Mentor** | offline rule-based mentor (vysvetlenia, testy, simulácie klienta, analýza slabín) + voliteľný API kľúč (Claude/GPT) pre plnohodnotné AI |
-| **Štatistiky** | Chart.js grafy: čas učenia, testy, progres, radar silných/slabých stránok |
+| **AI Mentor** | offline rule-based mentor (vysvetlenia, testy, simulácie klienta, analýza slabín) + voliteľný API kľúč (Claude/GPT) pre plnohodnotné AI · **denný personalizovaný plán** podľa slabých tém |
+| **Štatistiky** | Chart.js grafy: čas učenia, testy, progres, radar silných/slabých stránok · **Knowledge Map heatmapa** 25 tém s mastery 0–100 % |
+| **Skill Tree** | RPG strom znalostí — uzly sa odomykajú progresom, Master vetva po dokončení modulov |
+| **AI Auditor** | web audit cez reálne PageSpeed Insights API (CWV, SEO, výkon) + GBP audit wizard; odporúčania so závažnosťou/dopadom/náročnosťou/časom/prínosom |
+| **Portfolio Builder** | z auditov generuje profesionálny HTML report pre klienta (tlač → PDF) |
+| **Agentúra** | 50 simulovaných klientov, roleplay s náladou klienta a hodnotením (komunikácia/argumentácia/odbornosť/profesionalita), Master Mode: 20 projektov s náhodnými udalosťami |
+| **Skúšky** | mock certifikačné skúšky s časomierou; 2 interné certifikácie (GBP/GSC Expert) so skúškou priamo v appke |
+| **Interview Mode** | AI recruiter — 3 tracky × 8 otázok, vzorové odpovede seniora, verdikt |
+| **Questy** | Daily/Weekly/Monthly questy + Skill Points |
 
 ## Architektúra
 

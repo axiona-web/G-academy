@@ -249,6 +249,3 @@ Views.afterRender.admin = async () => {
   }
 };
 </script>
-
-</body>
-</html>

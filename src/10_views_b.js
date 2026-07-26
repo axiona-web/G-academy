@@ -164,10 +164,12 @@
             </div>
           </details>
           <div class="flex gap-2">
-            <a href="${c.url}" target="_blank" rel="noopener" class="btn-press flex-1 text-center py-2 rounded-xl text-xs font-semibold border border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 transition">↗ Skillshop</a>
+            ${c.internal
+              ? `<button onclick="App.startQuiz('internal','${c.id}')" class="btn-press flex-1 py-2 rounded-xl text-xs font-semibold text-white transition ${st.done ? 'bg-zinc-600 hover:bg-zinc-500' : 'bg-violet-600 hover:bg-violet-500'}">${st.done ? '↻ Zopakovať skúšku' : '🎓 Spustiť skúšku (40 ot. / 50 min)'}</button>`
+              : `<a href="${c.url}" target="_blank" rel="noopener" class="btn-press flex-1 text-center py-2 rounded-xl text-xs font-semibold border border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 transition">↗ Skillshop</a>
             <button onclick="App.toggleCert('${c.id}')" class="btn-press flex-1 py-2 rounded-xl text-xs font-semibold text-white transition ${st.done ? 'bg-zinc-600 hover:bg-zinc-500' : 'bg-emerald-600 hover:bg-emerald-500'}">
               ${st.done ? 'Zrušiť označenie' : ready >= 75 ? '✓ Som pripravený — splnená!' : 'Označiť ako splnenú'}
-            </button>
+            </button>`}
           </div>
           ${st.done && st.date ? `<div class="text-[10px] text-zinc-500 mt-2">Získaná ${new Date(st.date).toLocaleDateString('sk')} · obnova o 12 mes.</div>` : ''}
         </div>`;
@@ -277,7 +279,8 @@
     <div class="grid md:grid-cols-2 gap-4 mt-4">
       ${this.card(`<h3 class="font-bold text-sm mb-3 text-zinc-900 dark:text-white">🎓 Odhad pripravenosti na certifikácie</h3><div id="cert-ready-list" class="space-y-3"></div>`)}
       ${this.card(`<h3 class="font-bold text-sm mb-3 text-zinc-900 dark:text-white">🏆 Splnené moduly a certifikácie</h3><canvas id="ch-done" height="180"></canvas>`)}
-    </div>`;
+    </div>
+    ${this.heatmapHTML ? this.heatmapHTML() : ''}`;
   },
 
   /* ════════ AI MENTOR ════════ */

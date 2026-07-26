@@ -91,6 +91,9 @@ const Views = {
           </div>`)}
       </div>
 
+      <!-- Denný plán mentora + questy (learning engine) -->
+      ${typeof Engine !== 'undefined' ? this.dailyPlanCard() : ''}
+
       <!-- Štatistické karty -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         ${this.statCard('clock', hours + ' h', 'Odpracované hodiny', '#6366f1')}
@@ -350,9 +353,10 @@ const Views = {
     const cur = q.questions[q.idx];
     const answered = q.answers.filter(a => a !== null).length;
     App.modal(`
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="font-bold text-sm text-zinc-900 dark:text-white truncate pr-3">${q.title}</h3>
-        <button onclick="App.closeModal()" class="text-zinc-400 hover:text-red-400 shrink-0"><i data-lucide="x" class="w-5 h-5"></i></button>
+      <div class="flex items-center justify-between mb-4 gap-2">
+        <h3 class="font-bold text-sm text-zinc-900 dark:text-white truncate pr-1 flex-1">${q.title}</h3>
+        ${q.limitSec ? '<span id="quiz-timer" class="text-xs font-bold text-zinc-500 shrink-0">⏱ …</span>' : ''}
+        <button onclick="clearInterval(App._quizTimer);App.closeModal()" class="text-zinc-400 hover:text-red-400 shrink-0"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
       ${this.progressBar((q.idx + 1) / q.questions.length * 100, 'from-indigo-500 to-violet-500', 'h-1.5')}
       <div class="text-xs text-zinc-500 mt-2 mb-4">Otázka ${q.idx + 1} / ${q.questions.length} · zodpovedaných ${answered}</div>

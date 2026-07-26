@@ -2149,6 +2149,22 @@ DATA.certs = [
     knowledge: ['Performance Max do hĺbky', 'Smart Bidding stratégie', 'Broad match + automatizácia', 'Value-based bidding'],
     checklist: ['Dokončené lekcie PMax a Bidding', 'Dokončený celý modul Ads odporúčaný', 'Mock test na 80 %+'],
     reqModules: { ads: 70 } },
+  /* Interné certifikácie G-Academy — skúška prebieha priamo v aplikácii
+     (40 otázok, 50 minút, hranica 80 % — podmienky ako Skillshop) */
+  { id: 'cert-gbp-internal', name: 'Google Business Profile Expert (interná)', module: 'gbp', internal: true, examModule: 'gbp',
+    url: '', official: 'G-Academy',
+    desc: 'Interná expertná skúška z celého GBP modulu — lokálny ranking, správa profilu, recenzie, spam fighting, lokálne SEO a audity. Skúška beží priamo v aplikácii s časomierou.',
+    difficulty: 'Stredná', validity: 'neobmedzená', questions: '40 otázok', time: '50 minút', passing: '80 %',
+    knowledge: ['Ranking faktory a Local Pack', 'Správa a verifikácia profilu', 'Recenzie a krízová komunikácia', 'NAP, citácie, lokálne SEO', 'Audity a spam fighting'],
+    checklist: ['Dokončený celý modul GBP', 'Modulový test na 80 %+', 'Dokončený aspoň 1 GBP projekt'],
+    reqModules: { gbp: 90 } },
+  { id: 'cert-gsc-internal', name: 'Search Console Expert (interná)', module: 'gsc', internal: true, examModule: 'gsc',
+    url: '', official: 'G-Academy',
+    desc: 'Interná expertná skúška z celého GSC modulu — indexácia, canonicaly, redirecty, CWV, Performance analýzy a technické audity. Skúška beží priamo v aplikácii s časomierou.',
+    difficulty: 'Stredná', validity: 'neobmedzená', questions: '40 otázok', time: '50 minút', passing: '80 %',
+    knowledge: ['Crawling, indexácia, sitemap, robots', 'Canonical a duplicity', 'Core Web Vitals', 'Performance report a CTR', 'Manual actions a bezpečnosť'],
+    checklist: ['Dokončený celý modul GSC', 'Modulový test na 80 %+', 'Dokončený audit projekt'],
+    reqModules: { gsc: 90 } },
   { id: 'cert-analytics', name: 'Google Analytics (GA4) Certification', module: 'gsc',
     url: 'https://skillshop.exceedlms.com/student/catalog', official: 'Google Skillshop',
     desc: 'GA4 — eventy, konverzie, reporty, prepojenie s Ads. Nie je súčasťou kurzu do hĺbky, ale výborne dopĺňa GSC a Ads meranie.',
@@ -2390,6 +2406,14 @@ const App = {
       theme: 'dark',
       apiKey: '', apiProvider: 'anthropic',
       mentorHistory: [],
+      /* Learning engine (etapa 2) */
+      plan: null,            // denný plán mentora
+      quests: null,          // daily/weekly/monthly questy
+      skillPoints: 0,
+      roleplaysDone: 0,      // počet odohraných klientskych rozhovorov
+      master: {},            // Master Mode: { clientId: {step, score, log[], done} }
+      audits: [],            // história AI auditov (pre portfolio builder)
+      interviews: [],        // história pohovorov
     };
   },
 
@@ -2508,10 +2532,14 @@ const App = {
   /* ── Router ── */
   NAV: [
     { id: 'dashboard', name: 'Prehľad', icon: 'layout-dashboard' },
+    { id: 'skilltree', name: 'Skill Tree', icon: 'git-branch' },
     { id: 'modules', name: 'Moduly', icon: 'book-open' },
     { id: 'tests', name: 'Testy', icon: 'clipboard-check' },
     { id: 'flashcards', name: 'Flashcards', icon: 'layers' },
     { id: 'projects', name: 'Projekty', icon: 'briefcase' },
+    { id: 'auditor', name: 'AI Auditor', icon: 'scan-search' },
+    { id: 'agency', name: 'Agentúra', icon: 'building-2' },
+    { id: 'interview', name: 'Pohovor', icon: 'mic' },
     { id: 'certs', name: 'Certifikácie', icon: 'award' },
     { id: 'glossary', name: 'Slovník', icon: 'book-a' },
     { id: 'career', name: 'Kariéra', icon: 'trending-up' },
@@ -2608,6 +2636,8 @@ const App = {
     // týždenný cieľ
     const week = this.lessonsThisWeek();
     if (week === this.state.weeklyGoalLessons) this.toast('📅 Týždenný cieľ splnený!', `${week} lekcií tento týždeň`, '');
+    // learning engine: questy a denný plán
+    if (typeof Engine !== 'undefined') { Engine.autoTickPlan(); Engine.questProgress('weekly-check'); Engine.questProgress('monthly-check'); }
     this.render();
   },
   lessonsThisWeek() {
@@ -2620,8 +2650,9 @@ const App = {
      Testy neukazujú správne odpovede priebežne — vyhodnotenie s
      vysvetleniami až na konci (ako reálne certifikácie). */
   quiz: null,
+  _quizTimer: null,
   startQuiz(type, refId) {
-    let questions = [], title = '', quizId = '';
+    let questions = [], title = '', quizId = '', limitSec = 0;
     if (type === 'lesson') {
       const l = this.getLesson(refId);
       questions = l.quiz.map((q, i) => ({ ...q, src: l.id + ':' + i }));
@@ -2635,11 +2666,31 @@ const App = {
       questions = this.sample(pool, 100);
       title = 'Záverečný test (100 otázok)'; quizId = 'final';
     } else if (type === 'cert') {
+      // Mock certifikačná skúška — reálne podmienky Skillshopu: 50 otázok / 75 minút
       const pool = this.moduleLessons('ads').flatMap(l => l.quiz.map((q, i) => ({ ...q, src: l.id + ':' + i })));
       questions = this.sample(pool, 50);
-      title = 'Mock certifikačný test (Ads, 50 otázok)'; quizId = 'cert-mock';
+      title = 'Mock certifikačný test (Ads, 50 otázok)'; quizId = 'cert-mock'; limitSec = 75 * 60;
+    } else if (type === 'internal') {
+      // Interná certifikačná skúška (GBP/GSC Expert): 40 otázok / 50 minút, 80 %
+      const cert = DATA.certs.find(c => c.id === refId);
+      const pool = this.moduleLessons(cert.examModule).flatMap(l => l.quiz.map((q, i) => ({ ...q, src: l.id + ':' + i })));
+      questions = this.sample(pool, 40);
+      title = 'Skúška: ' + cert.name; quizId = 'internal:' + refId; limitSec = 50 * 60;
     }
-    this.quiz = { type, refId, quizId, title, questions, answers: new Array(questions.length).fill(null), idx: 0 };
+    this.quiz = { type, refId, quizId, title, questions, answers: new Array(questions.length).fill(null), idx: 0, limitSec, endsAt: limitSec ? Date.now() + limitSec * 1000 : 0 };
+    // Časomiera: každú sekundu aktualizuj displej; po vypršaní auto-vyhodnotenie
+    clearInterval(this._quizTimer);
+    if (limitSec) this._quizTimer = setInterval(() => {
+      const q = this.quiz;
+      if (!q || q.finished) { clearInterval(this._quizTimer); return; }
+      const left = Math.max(0, Math.round((q.endsAt - Date.now()) / 1000));
+      const el = document.getElementById('quiz-timer');
+      if (el) {
+        el.textContent = '⏱ ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+        el.className = left < 300 ? 'text-xs font-bold text-red-500' : 'text-xs font-bold text-zinc-500';
+      }
+      if (left <= 0) { this.toast('⏱ Čas vypršal', 'Test sa vyhodnocuje', ''); this.finishQuiz(); }
+    }, 1000);
     Views.renderQuiz();
   },
   sample(arr, n) {
@@ -2657,8 +2708,15 @@ const App = {
   },
   finishQuiz() {
     const q = this.quiz;
+    if (!q || q.finished) return;
+    clearInterval(this._quizTimer);
     const score = q.questions.reduce((s, question, i) => s + (q.answers[i] === question.c ? 1 : 0), 0);
     const total = q.questions.length;
+    // Interná certifikácia: úspech ≥ 80 % automaticky udelí certifikát
+    if (q.type === 'internal' && score / total >= 0.8 && !(this.state.certs[q.refId] || {}).done) {
+      this.state.certs[q.refId] = { done: true, date: Date.now() };
+      this.toast('🎓 Certifikácia získaná!', DATA.certs.find(c => c.id === q.refId).name, '');
+    }
     // uloženie najlepšieho výsledku + histórie
     const prev = this.state.quizResults[q.quizId];
     if (!prev || score / total > prev.score / prev.total) this.state.quizResults[q.quizId] = { score, total, date: Date.now() };
@@ -2855,6 +2913,9 @@ const Views = {
             ${dueCards ? `<button onclick="App.go('flashcards')" class="w-full btn-press text-left text-sm px-3 py-2 rounded-xl bg-amber-500/10 text-amber-500 font-semibold">🃏 ${dueCards} kartičiek na zopakovanie</button>` : ''}
           </div>`)}
       </div>
+
+      <!-- Denný plán mentora + questy (learning engine) -->
+      ${typeof Engine !== 'undefined' ? this.dailyPlanCard() : ''}
 
       <!-- Štatistické karty -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -3115,9 +3176,10 @@ const Views = {
     const cur = q.questions[q.idx];
     const answered = q.answers.filter(a => a !== null).length;
     App.modal(`
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="font-bold text-sm text-zinc-900 dark:text-white truncate pr-3">${q.title}</h3>
-        <button onclick="App.closeModal()" class="text-zinc-400 hover:text-red-400 shrink-0"><i data-lucide="x" class="w-5 h-5"></i></button>
+      <div class="flex items-center justify-between mb-4 gap-2">
+        <h3 class="font-bold text-sm text-zinc-900 dark:text-white truncate pr-1 flex-1">${q.title}</h3>
+        ${q.limitSec ? '<span id="quiz-timer" class="text-xs font-bold text-zinc-500 shrink-0">⏱ …</span>' : ''}
+        <button onclick="clearInterval(App._quizTimer);App.closeModal()" class="text-zinc-400 hover:text-red-400 shrink-0"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
       ${this.progressBar((q.idx + 1) / q.questions.length * 100, 'from-indigo-500 to-violet-500', 'h-1.5')}
       <div class="text-xs text-zinc-500 mt-2 mb-4">Otázka ${q.idx + 1} / ${q.questions.length} · zodpovedaných ${answered}</div>
@@ -3304,10 +3366,12 @@ const Views = {
             </div>
           </details>
           <div class="flex gap-2">
-            <a href="${c.url}" target="_blank" rel="noopener" class="btn-press flex-1 text-center py-2 rounded-xl text-xs font-semibold border border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 transition">↗ Skillshop</a>
+            ${c.internal
+              ? `<button onclick="App.startQuiz('internal','${c.id}')" class="btn-press flex-1 py-2 rounded-xl text-xs font-semibold text-white transition ${st.done ? 'bg-zinc-600 hover:bg-zinc-500' : 'bg-violet-600 hover:bg-violet-500'}">${st.done ? '↻ Zopakovať skúšku' : '🎓 Spustiť skúšku (40 ot. / 50 min)'}</button>`
+              : `<a href="${c.url}" target="_blank" rel="noopener" class="btn-press flex-1 text-center py-2 rounded-xl text-xs font-semibold border border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 transition">↗ Skillshop</a>
             <button onclick="App.toggleCert('${c.id}')" class="btn-press flex-1 py-2 rounded-xl text-xs font-semibold text-white transition ${st.done ? 'bg-zinc-600 hover:bg-zinc-500' : 'bg-emerald-600 hover:bg-emerald-500'}">
               ${st.done ? 'Zrušiť označenie' : ready >= 75 ? '✓ Som pripravený — splnená!' : 'Označiť ako splnenú'}
-            </button>
+            </button>`}
           </div>
           ${st.done && st.date ? `<div class="text-[10px] text-zinc-500 mt-2">Získaná ${new Date(st.date).toLocaleDateString('sk')} · obnova o 12 mes.</div>` : ''}
         </div>`;
@@ -3417,7 +3481,8 @@ const Views = {
     <div class="grid md:grid-cols-2 gap-4 mt-4">
       ${this.card(`<h3 class="font-bold text-sm mb-3 text-zinc-900 dark:text-white">🎓 Odhad pripravenosti na certifikácie</h3><div id="cert-ready-list" class="space-y-3"></div>`)}
       ${this.card(`<h3 class="font-bold text-sm mb-3 text-zinc-900 dark:text-white">🏆 Splnené moduly a certifikácie</h3><canvas id="ch-done" height="180"></canvas>`)}
-    </div>`;
+    </div>
+    ${this.heatmapHTML ? this.heatmapHTML() : ''}`;
   },
 
   /* ════════ AI MENTOR ════════ */
@@ -4069,6 +4134,1193 @@ Views.afterRender.admin = async () => {
   } catch (e) {
     document.getElementById('admin-table').innerHTML = '⚠️ Nepodarilo sa načítať dáta: ' + e.message;
   }
+};
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   LEARNING ENGINE — študentský model, denný plán mentora, quests,
+   skill tree a knowledge heatmap
+   ───────────────────────────────────────────────────────────────────
+   Filozofia: žiadne náhodné úlohy. Všetko sa počíta z reálnych dát
+   používateľa: dokončené lekcie, výsledky kvízov, flashcards, streak.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── TÉMY pre knowledge map (uzly poznania s priradenými lekciami) ── */
+DATA.topics = [
+  { id: 't-local-basics', name: 'Lokálne vyhľadávanie', mod: 'gbp', lessons: ['gbp-1-1', 'gbp-1-2'] },
+  { id: 't-ranking', name: 'Local Ranking faktory', mod: 'gbp', lessons: ['gbp-1-3', 'gbp-1-4'] },
+  { id: 't-profile-setup', name: 'Založenie a verifikácia', mod: 'gbp', lessons: ['gbp-2-1', 'gbp-2-2'] },
+  { id: 't-categories', name: 'Kategórie a nastavenia', mod: 'gbp', lessons: ['gbp-2-3', 'gbp-2-4'] },
+  { id: 't-content-gbp', name: 'Obsah profilu (foto, produkty)', mod: 'gbp', lessons: ['gbp-2-5', 'gbp-2-6', 'gbp-3-1', 'gbp-3-2'] },
+  { id: 't-reviews', name: 'Recenzie', mod: 'gbp', lessons: ['gbp-3-3', 'gbp-3-4'] },
+  { id: 't-spam', name: 'Spam fighting', mod: 'gbp', lessons: ['gbp-3-5'] },
+  { id: 't-localseo', name: 'Lokálne SEO (NAP, citácie)', mod: 'gbp', lessons: ['gbp-4-1', 'gbp-4-2'] },
+  { id: 't-gbp-advanced', name: 'GBP optimalizácia a analytika', mod: 'gbp', lessons: ['gbp-4-3', 'gbp-4-4', 'gbp-5-1'] },
+  { id: 't-crawling', name: 'Crawling a indexácia', mod: 'gsc', lessons: ['gsc-1-1', 'gsc-1-2'] },
+  { id: 't-sitemap-robots', name: 'Sitemap a robots.txt', mod: 'gsc', lessons: ['gsc-1-3', 'gsc-1-4'] },
+  { id: 't-coverage', name: 'Coverage a canonical', mod: 'gsc', lessons: ['gsc-2-1', 'gsc-2-2'] },
+  { id: 't-redirects', name: 'Redirecty a 404', mod: 'gsc', lessons: ['gsc-2-3', 'gsc-2-4'] },
+  { id: 't-schema', name: 'Structured Data', mod: 'gsc', lessons: ['gsc-2-5'] },
+  { id: 't-performance', name: 'Performance a CTR', mod: 'gsc', lessons: ['gsc-3-1', 'gsc-3-2', 'gsc-3-3'] },
+  { id: 't-cwv', name: 'Core Web Vitals', mod: 'gsc', lessons: ['gsc-4-1', 'gsc-4-2'] },
+  { id: 't-penalties', name: 'Penalizácie a bezpečnosť', mod: 'gsc', lessons: ['gsc-4-3', 'gsc-5-1'] },
+  { id: 't-auction', name: 'Aukcia a Ad Rank', mod: 'ads', lessons: ['ads-1-1', 'ads-1-2'] },
+  { id: 't-keywords', name: 'Keywords a Match Types', mod: 'ads', lessons: ['ads-2-1', 'ads-2-2', 'ads-2-3'] },
+  { id: 't-quality-score', name: 'Quality Score a reklamy', mod: 'ads', lessons: ['ads-2-4', 'ads-2-5', 'ads-2-6'] },
+  { id: 't-campaign-types', name: 'Typy kampaní (PMax, Shopping…)', mod: 'ads', lessons: ['ads-1-3', 'ads-3-1', 'ads-3-2', 'ads-3-3', 'ads-3-4', 'ads-3-5', 'ads-3-6'] },
+  { id: 't-bidding', name: 'Bidding, CPA, ROAS', mod: 'ads', lessons: ['ads-4-1', 'ads-4-2'] },
+  { id: 't-measurement', name: 'Meranie a atribúcia', mod: 'ads', lessons: ['ads-4-3', 'ads-4-4'] },
+  { id: 't-audiences', name: 'Publiká a remarketing', mod: 'ads', lessons: ['ads-5-1', 'ads-5-2'] },
+  { id: 't-optimization', name: 'Optimalizácia a reporting', mod: 'ads', lessons: ['ads-6-1', 'ads-6-2', 'ads-6-3', 'ads-6-4'] },
+];
+
+const Engine = {
+  /* ── Mastery témy 0–100 %: 40 % dokončenie lekcií + 60 % kvízy ── */
+  mastery(topic) {
+    const s = App.state;
+    let doneL = 0, quizSum = 0, quizN = 0;
+    topic.lessons.forEach(id => {
+      if (s.completedLessons[id]) doneL++;
+      const q = s.quizResults['lesson:' + id];
+      if (q) { quizSum += q.score / q.total; quizN++; }
+    });
+    const lessonPart = doneL / topic.lessons.length * 40;
+    const quizPart = quizN ? (quizSum / quizN) * 60 : 0;
+    return Math.round(lessonPart + quizPart);
+  },
+  /* Stav témy pre knowledge map */
+  topicStatus(topic) {
+    const m = this.mastery(topic);
+    const started = topic.lessons.some(id => App.state.completedLessons[id]);
+    if (m >= 85) return { m, key: 'done', label: 'Ovládam', color: '#10b981' };
+    if (m >= 60) return { m, key: 'learning', label: 'Učím sa', color: '#3b82f6' };
+    if (started || m > 0) return { m, key: 'repeat', label: 'Zopakovať', color: '#f59e0b' };
+    return { m, key: 'todo', label: 'Neviem', color: '#71717a' };
+  },
+  knowledge() { return DATA.topics.map(t => ({ ...t, ...this.topicStatus(t) })); },
+  /* Najslabšie témy, v ktorých už používateľ pracoval (má pokusy) */
+  weakest(n = 3) {
+    return this.knowledge()
+      .filter(t => t.m > 0 && t.m < 85)
+      .sort((a, b) => a.m - b.m)
+      .slice(0, n);
+  },
+
+  /* ── DENNÝ PLÁN MENTORA ──────────────────────────────────────────
+     Generuje sa raz denne z aktuálneho stavu. Nikdy nie náhodne:
+     lekcie = ďalšie nedokončené; kvíz = najslabší modul;
+     opakovanie = due flashcards; dôvod = najslabšia téma. */
+  dailyPlan() {
+    const s = App.state;
+    const today = App.todayKey();
+    if (s.plan && s.plan.date === today) return s.plan;
+    const nextLessons = App.allLessons().filter(l => !s.completedLessons[l.id]).slice(0, 2);
+    const weak = this.weakest(1)[0];
+    const due = App.fcDueCards().length;
+    const weakMod = weak ? weak.mod : (nextLessons[0] ? nextLessons[0].moduleId : 'ads');
+    const items = [];
+    nextLessons.forEach(l => items.push({ id: 'lesson:' + l.id, type: 'lesson', label: `Lekcia: ${l.title}`, action: `App.go('lesson',{id:'${l.id}'})` }));
+    if (due) items.push({ id: 'fc', type: 'fc', label: `${Math.min(due, 8)} flashcards na zopakovanie`, action: `App.go('flashcards')` });
+    items.push({ id: 'quiz:' + weakMod, type: 'quiz', label: `10 otázok z modulu ${App.getModule(weakMod).short}`, action: `App.startQuiz('module','${weakMod}')` });
+    const proj = DATA.projects.find(p => (App.state.projects[p.id] || {}).status !== 'done');
+    if (proj && App.moduleProgress(proj.module) >= 50) items.push({ id: 'proj:' + proj.id, type: 'proj', label: `Praktická úloha: pokrok v projekte „${proj.name}"`, action: `App.go('projects')` });
+    const reason = weak
+      ? `pretože téma <b>${weak.name}</b> má mastery len ${weak.m} % — posledné testy ukazujú chyby práve tu.`
+      : (nextLessons.length ? 'pretože si na začiatku cesty — najdôležitejšia je pravidelnosť.' : 'pretože všetko máš hotové — udržiavaj vedomosti opakovaním.');
+    s.plan = { date: today, items, reason, done: {} };
+    App.save();
+    return s.plan;
+  },
+  planCheck(itemId) {
+    const p = App.state.plan;
+    if (!p || p.done[itemId]) return;
+    p.done[itemId] = true;
+    App.save();
+    if (Object.keys(p.done).length === p.items.length) {
+      App.state.skillPoints = (App.state.skillPoints || 0) + 3;
+      App.addXP(80, '🎯 Denný plán splnený! +3 Skill Points');
+      this.questProgress('daily');
+    }
+    App.render();
+  },
+  /* Automatické odškrtávanie plánu podľa reálnej aktivity */
+  autoTickPlan() {
+    const p = App.state.plan;
+    if (!p || p.date !== App.todayKey()) return;
+    p.items.forEach(it => {
+      if (p.done[it.id]) return;
+      if (it.type === 'lesson' && App.state.completedLessons[it.id.replace('lesson:', '')]) p.done[it.id] = true;
+      if (it.type === 'fc' && App.fcDueCards().length === 0) p.done[it.id] = true;
+      if (it.type === 'quiz') {
+        const mod = it.id.replace('quiz:', '');
+        const t = App.state.testHistory.filter(x => x.id === 'module:' + mod && x.date > new Date(p.date).getTime());
+        if (t.length) p.done[it.id] = true;
+      }
+    });
+    App.save();
+  },
+
+  /* ── QUESTS: denné / týždenné / mesačné ── */
+  weekKey() { const d = new Date(); const on = new Date(d.getFullYear(), 0, 1); return d.getFullYear() + '-w' + Math.ceil((((d - on) / 864e5) + on.getDay() + 1) / 7); },
+  monthKey() { return App.todayKey().slice(0, 7); },
+  quests() {
+    const s = App.state;
+    if (!s.quests) s.quests = {};
+    const q = s.quests;
+    if (!q.weekly || q.weekly.week !== this.weekKey()) q.weekly = { week: this.weekKey(), lessons: 0 };
+    if (!q.monthly || q.monthly.month !== this.monthKey()) q.monthly = { month: this.monthKey(), xpStart: s.xp };
+    const dailyDone = s.plan && s.plan.date === App.todayKey() && Object.keys(s.plan.done).length >= s.plan.items.length;
+    const weeklyTarget = 7, monthlyTarget = 1500;
+    return [
+      { icon: '☀️', name: 'Daily Quest', desc: 'Splň celý denný plán mentora', prog: dailyDone ? 1 : (s.plan && s.plan.date === App.todayKey() ? Object.keys(s.plan.done).length / s.plan.items.length : 0), reward: '80 XP + 3 SP' },
+      { icon: '📅', name: 'Weekly Quest', desc: `Dokonči ${weeklyTarget} lekcií tento týždeň`, prog: Math.min(1, App.lessonsThisWeek() / weeklyTarget), reward: '200 XP + 5 SP' },
+      { icon: '🌙', name: 'Monthly Challenge', desc: `Získaj ${monthlyTarget} XP tento mesiac`, prog: Math.min(1, (s.xp - q.monthly.xpStart) / monthlyTarget), reward: 'Odznak + 15 SP' },
+    ];
+  },
+  questProgress(type) {
+    const s = App.state;
+    if (type === 'weekly-check' && App.lessonsThisWeek() === 7) { s.skillPoints = (s.skillPoints || 0) + 5; App.addXP(200, '📅 Weekly Quest splnený!'); }
+    if (type === 'monthly-check' && s.quests?.monthly && (s.xp - s.quests.monthly.xpStart) >= 1500 && !s.quests.monthly.claimed) { s.quests.monthly.claimed = true; s.skillPoints = (s.skillPoints || 0) + 15; App.toast('🌙 Monthly Challenge splnený!', '+15 Skill Points', ''); }
+    App.save();
+  },
+
+  /* ── PREDIKCIE ── */
+  clientReadiness() {
+    // pripravenosť na reálneho klienta: progres + testy + prax (roleplay, projekty)
+    const prog = App.overallProgress();
+    const tests = App.state.testHistory.filter(t => t.type !== 'lesson');
+    const testAvg = tests.length ? tests.reduce((a, t) => a + t.score / t.total, 0) / tests.length * 100 : 0;
+    const practice = Math.min(100, ((App.state.roleplaysDone || 0) * 10) + (Object.values(App.state.projects).filter(p => p.status === 'done').length * 15));
+    return Math.round(prog * 0.4 + testAvg * 0.35 + practice * 0.25);
+  },
+};
+
+/* ═══════════════ VIEW: SKILL TREE ═══════════════ */
+Views.skilltree = function () {
+  /* Uzol = sekcia modulu. Odomyká sa: prvá sekcia vždy; ďalšia keď
+     predchádzajúca ≥ 60 %. Master vetva po dokončení všetkých modulov. */
+  const sectionPct = (sec) => {
+    const done = sec.lessons.filter(l => App.state.completedLessons[l.id]).length;
+    return Math.round(done / sec.lessons.length * 100);
+  };
+  const treeHtml = DATA.modules.map(m => {
+    let prevPct = 100;
+    const nodes = m.sections.map((sec, i) => {
+      const pct = sectionPct(sec);
+      const unlocked = i === 0 || prevPct >= 60;
+      const state = !unlocked ? 'locked' : pct >= 100 ? 'done' : pct > 0 ? 'progress' : 'open';
+      const node = { sec, pct, unlocked, state };
+      prevPct = pct;
+      return node;
+    });
+    return `
+    <div class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#131316] p-5">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:${m.color}18;color:${m.color}"><i data-lucide="${m.icon}" class="w-5 h-5"></i></div>
+        <div><div class="font-bold text-zinc-900 dark:text-white">${m.name}</div><div class="text-xs text-zinc-500">${App.moduleProgress(m.id)} % · vetva stromu</div></div>
+      </div>
+      <div class="relative pl-5">
+        <div class="absolute left-[9px] top-2 bottom-2 w-0.5 bg-zinc-200 dark:bg-zinc-800"></div>
+        ${nodes.map(n => `
+        <div class="relative mb-3 last:mb-0">
+          <div class="absolute -left-5 top-2.5 w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center text-[9px] font-bold
+            ${n.state === 'done' ? 'bg-emerald-500 border-emerald-500 text-white' : n.state === 'progress' ? 'border-indigo-500 text-indigo-400 bg-white dark:bg-[#131316]' : n.state === 'open' ? 'border-zinc-400 bg-white dark:bg-[#131316]' : 'border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800'}">
+            ${n.state === 'done' ? '✓' : n.state === 'locked' ? '🔒' : ''}
+          </div>
+          <button ${n.unlocked ? `onclick="App.go('module',{id:'${m.id}'})"` : 'disabled'}
+            class="w-full text-left rounded-xl border px-3 py-2 transition ${n.unlocked ? 'border-zinc-200 dark:border-zinc-800 hover:border-indigo-500/50 btn-press' : 'border-zinc-100 dark:border-zinc-800/50 opacity-45 cursor-not-allowed'}">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-semibold ${n.state === 'done' ? 'text-emerald-500' : 'text-zinc-800 dark:text-zinc-200'}">${n.sec.title}</span>
+              <span class="text-xs font-bold" style="color:${n.state === 'done' ? '#10b981' : m.color}">${n.unlocked ? n.pct + ' %' : ''}</span>
+            </div>
+            ${n.unlocked ? `<div class="mt-1.5 h-1 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden"><div class="h-full rounded-full" style="background:${m.color};width:${n.pct}%"></div></div>` : '<div class="text-[10px] text-zinc-500 mt-0.5">Odomkne sa: predchádzajúca sekcia ≥ 60 %</div>'}
+          </button>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  const allDone = DATA.modules.every(m => App.moduleProgress(m.id) >= 100);
+  return `
+  <p class="text-sm text-zinc-500 mb-4">🌳 Strom znalostí — uzly sa odomykajú postupne. Master vetva (Agentúra) sa otvorí po dokončení všetkých troch modulov.</p>
+  <div class="grid md:grid-cols-3 gap-4">${treeHtml}</div>
+  <div class="mt-4 rounded-2xl border-2 ${allDone ? 'border-violet-500/50 bg-violet-500/5' : 'border-dashed border-zinc-300 dark:border-zinc-700'} p-5 text-center">
+    <div class="text-3xl mb-1">${allDone ? '👑' : '🔒'}</div>
+    <div class="font-bold text-zinc-900 dark:text-white">MASTER MODE — Agentúra</div>
+    <p class="text-xs text-zinc-500 mt-1">${allDone ? 'Odomknuté! 20 komplexných klientskych projektov s reálnymi udalosťami.' : 'Dokonči všetky tri moduly a odomkni simuláciu vlastnej agentúry s 20 projektmi.'}</p>
+    <button onclick="App.go('agency')" class="btn-press mt-3 px-5 py-2 rounded-xl text-sm font-semibold ${allDone ? 'bg-violet-600 hover:bg-violet-500 text-white' : 'border border-zinc-300 dark:border-zinc-700'}">${allDone ? 'Vstúpiť do Agentúry' : 'Pozrieť klientov (roleplay je dostupný hneď)'}</button>
+  </div>`;
+};
+
+/* ═══════════════ Heatmap + Knowledge map (pre Štatistiky) ═══════════════ */
+Views.heatmapHTML = function () {
+  const know = Engine.knowledge();
+  const counts = { done: 0, learning: 0, repeat: 0, todo: 0 };
+  know.forEach(k => counts[k.key]++);
+  const heat = (m) => m >= 85 ? '#10b981' : m >= 60 ? '#22c55e' : m >= 40 ? '#f59e0b' : m > 0 ? '#ef4444' : (App.state.theme === 'dark' ? '#27272a' : '#e4e4e7');
+  return `
+  <div class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#131316] p-5 mt-4">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+      <h3 class="font-bold text-sm text-zinc-900 dark:text-white">🗺️ Knowledge Map — heatmapa znalostí</h3>
+      <div class="flex gap-3 text-[11px] text-zinc-500">
+        <span>🟢 Ovládam (${counts.done})</span><span>🔵 Učím sa (${counts.learning})</span>
+        <span>🟠 Zopakovať (${counts.repeat})</span><span>⚪ Neviem (${counts.todo})</span>
+      </div>
+    </div>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+      ${know.map(k => `
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3" title="${k.label}">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate pr-2">${k.name}</span>
+          <span class="text-xs font-extrabold shrink-0" style="color:${heat(k.m)}">${k.m} %</span>
+        </div>
+        <div class="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden"><div class="h-full rounded-full transition-all duration-700" style="background:${heat(k.m)};width:${Math.max(2, k.m)}%"></div></div>
+        <div class="text-[10px] mt-1" style="color:${k.color}">${k.label} · ${App.getModule(k.mod).short}</div>
+      </div>`).join('')}
+    </div>
+    <div class="mt-4 grid sm:grid-cols-2 gap-3">
+      <div class="rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-3 text-xs">
+        <b class="text-indigo-400">🎯 Predikcia certifikácie (Search):</b>
+        <span class="text-zinc-700 dark:text-zinc-300">${App.certReadiness(DATA.certs[0])} % pravdepodobnosť úspechu</span>
+      </div>
+      <div class="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs">
+        <b class="text-emerald-500">🤝 Pripravenosť na klienta:</b>
+        <span class="text-zinc-700 dark:text-zinc-300">${Engine.clientReadiness()} % (progres + testy + prax)</span>
+      </div>
+    </div>
+  </div>`;
+};
+
+/* ═══════════════ Denný plán + Quests karta (pre Dashboard) ═══════════════ */
+Views.dailyPlanCard = function () {
+  Engine.autoTickPlan();
+  const plan = Engine.dailyPlan();
+  const doneN = Object.keys(plan.done).length;
+  const quests = Engine.quests();
+  return `
+  <div class="grid md:grid-cols-3 gap-4 mt-2">
+    <div class="md:col-span-2 rounded-2xl border-2 border-indigo-500/30 bg-indigo-500/5 p-5">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="text-lg">🤖</span><h3 class="font-bold text-zinc-900 dark:text-white">Mentor: dnešný plán</h3>
+        <span class="ml-auto text-xs font-bold text-indigo-400">${doneN}/${plan.items.length}</span>
+      </div>
+      <p class="text-xs text-zinc-500 mb-3">Odporúčam presne toto — ${plan.reason}</p>
+      <div class="space-y-1.5">
+        ${plan.items.map(it => `
+        <div class="flex items-center gap-2.5 rounded-xl px-3 py-2 ${plan.done[it.id] ? 'bg-emerald-500/10' : 'bg-white dark:bg-[#131316] border border-zinc-200 dark:border-zinc-800'}">
+          <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0 ${plan.done[it.id] ? 'bg-emerald-500 text-white' : 'border-2 border-zinc-300 dark:border-zinc-600'}">${plan.done[it.id] ? '✓' : ''}</span>
+          <span class="text-sm flex-1 ${plan.done[it.id] ? 'line-through text-zinc-400' : 'text-zinc-800 dark:text-zinc-200'}">${it.label}</span>
+          ${!plan.done[it.id] ? `<button onclick="${it.action.replace(/"/g, '&quot;')}" class="btn-press text-xs font-bold text-indigo-400 hover:underline shrink-0">Spustiť →</button>` : ''}
+        </div>`).join('')}
+      </div>
+    </div>
+    <div class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#131316] p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-sm text-zinc-900 dark:text-white">⚔️ Questy</h3>
+        <span class="chip bg-violet-500/10 text-violet-400">💠 ${App.state.skillPoints || 0} SP</span>
+      </div>
+      <div class="space-y-3">
+        ${quests.map(q => `
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="font-semibold text-zinc-700 dark:text-zinc-300">${q.icon} ${q.name}</span>
+            <span class="text-zinc-500">${Math.round(q.prog * 100)} %</span>
+          </div>
+          <div class="h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500" style="width:${q.prog * 100}%"></div></div>
+          <div class="text-[10px] text-zinc-500 mt-0.5">${q.desc} · ${q.reward}</div>
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+};
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   AI AUDITOR + PORTFOLIO BUILDER
+   ───────────────────────────────────────────────────────────────────
+   • Web audit: REÁLNE dáta z Google PageSpeed Insights API
+     (bezplatné, funguje priamo z prehliadača) → výkon, CWV, SEO.
+   • GBP audit: expertný wizard — odpovieš na otázky podľa profilu,
+     engine vypočíta skóre a prioritizované odporúčania.
+   • Každé odporúčanie: závažnosť · dopad · náročnosť · čas · prínos.
+   • Portfolio Builder: z auditu vygeneruje profesionálny HTML report
+     pripravený na odoslanie klientovi (tlač → PDF).
+   ═══════════════════════════════════════════════════════════════════ */
+
+const Auditor = {
+  /* ── Katalóg odporúčaní pre web audit (mapované na PSI audity) ──
+     sev: critical/high/med/low · impact/effort 1–5 · time · benefit */
+  webRecs: {
+    'largest-contentful-paint': { name: 'Zrýchliť LCP (najväčší prvok)', sev: 'high', impact: 4, effort: 3, time: '1–3 dni', benefit: 'Lepší UX, konverzie aj CWV hodnotenie', how: 'Optimalizuj hero obrázok (WebP/AVIF, preload), zrýchli server (TTFB), použi CDN.' },
+    'cumulative-layout-shift': { name: 'Odstrániť poskakovanie layoutu (CLS)', sev: 'med', impact: 3, effort: 2, time: '0,5–1 deň', benefit: 'Stabilná stránka = menej frustrácie a chybných klikov', how: 'Nastav rozmery obrázkov/iframe, rezervuj miesto pre bannery, font-display: swap.' },
+    'total-blocking-time': { name: 'Znížiť blokovanie JavaScriptom (INP/TBT)', sev: 'high', impact: 4, effort: 4, time: '2–5 dní', benefit: 'Rýchla odozva na kliky, lepšie INP', how: 'Code splitting, odloženie skriptov tretích strán, audit tag managera.' },
+    'server-response-time': { name: 'Zrýchliť odozvu servera (TTFB)', sev: 'high', impact: 4, effort: 3, time: '1–2 dni', benefit: 'Základ všetkých rýchlostných metrík', how: 'Caching, lepší hosting, optimalizácia databázy.' },
+    'render-blocking-resources': { name: 'Odstrániť render-blocking zdroje', sev: 'med', impact: 3, effort: 2, time: '0,5 dňa', benefit: 'Rýchlejšie prvé vykreslenie', how: 'Critical CSS inline, defer/async pre JS, odlož nepotrebné CSS.' },
+    'uses-optimized-images': { name: 'Optimalizovať obrázky', sev: 'med', impact: 3, effort: 1, time: '2–4 hodiny', benefit: 'Menšie prenosy, rýchlejšie LCP', how: 'WebP/AVIF formáty, správne rozmery, lazy-loading (nie pre LCP prvok).' },
+    'document-title': { name: 'Doplniť title stránky', sev: 'critical', impact: 5, effort: 1, time: '30 minút', benefit: 'Title je základný SEO signál a text v SERP', how: 'Unikátny title do 60 znakov: dopyt + benefit + brand.' },
+    'meta-description': { name: 'Doplniť meta description', sev: 'high', impact: 3, effort: 1, time: '1 hodina', benefit: 'Vyššie CTR vo výsledkoch (reklamný text zadarmo)', how: '150–160 znakov, benefit + CTA, unikátne per stránka.' },
+    'link-text': { name: 'Opraviť generické texty odkazov', sev: 'low', impact: 2, effort: 1, time: '1–2 hodiny', benefit: 'Lepšie pochopenie štruktúry Googlom', how: 'Nahraď „kliknite sem" popisnými anchor textami.' },
+    'is-crawlable': { name: 'KRITICKÉ: Stránka je blokovaná pre indexáciu!', sev: 'critical', impact: 5, effort: 1, time: '30 minút', benefit: 'Bez indexácie neexistuje organická návštevnosť', how: 'Odstráň noindex / robots.txt blokáciu — over zámer s vývojárom.' },
+    'robots-txt': { name: 'Opraviť robots.txt', sev: 'high', impact: 4, effort: 1, time: '1 hodina', benefit: 'Správne riadenie crawlingu', how: 'Validuj syntax, over že neblokuje CSS/JS ani dôležité sekcie.' },
+    'image-alt': { name: 'Doplniť alt texty obrázkov', sev: 'low', impact: 2, effort: 2, time: '2–4 hodiny', benefit: 'Prístupnosť + obrázkové vyhľadávanie', how: 'Popisné alt atribúty pre informačné obrázky.' },
+    'hreflang': { name: 'Opraviť hreflang', sev: 'med', impact: 3, effort: 2, time: '0,5 dňa', benefit: 'Správne jazykové verzie v správnych krajinách', how: 'Konzistentné obojsmerné hreflang anotácie + x-default.' },
+    'canonical': { name: 'Opraviť canonical', sev: 'high', impact: 4, effort: 1, time: '1–2 hodiny', benefit: 'Čistá kanonizácia = žiadne rozdrobené signály', how: 'Self-referencing canonical, absolútna URL, súlad so sitemap.' },
+    'viewport': { name: 'Doplniť viewport meta tag', sev: 'critical', impact: 5, effort: 1, time: '15 minút', benefit: 'Bez neho web nie je mobilný — mobile-first indexing!', how: '<meta name="viewport" content="width=device-width, initial-scale=1">.' },
+    'is-on-https': { name: 'Prejsť na HTTPS', sev: 'critical', impact: 5, effort: 2, time: '0,5 dňa', benefit: 'Bezpečnosť, dôvera, ranking signál', how: 'SSL certifikát (Let\'s Encrypt zdarma) + 301 z HTTP + oprava mixed content.' },
+  },
+
+  /* Sanitizácia používateľských vstupov pred uložením/renderovaním
+     (ochrana pred HTML injection v histórii auditov a reportoch) */
+  clean(s) { return String(s || '').replace(/[<>"'`]/g, '').slice(0, 200); },
+
+  /* ── WEB AUDIT cez PageSpeed Insights API ── */
+  async runWebAudit(url) {
+    url = this.clean(url);
+    const api = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=' + encodeURIComponent(url) + '&strategy=mobile&category=PERFORMANCE&category=SEO&locale=sk';
+    const resp = await fetch(api);
+    if (!resp.ok) throw new Error('PSI API vrátilo ' + resp.status + ' — skontroluj URL (musí byť verejne dostupná).');
+    const d = await resp.json();
+    const lh = d.lighthouseResult;
+    if (!lh) throw new Error('Lighthouse analýza zlyhala — web môže blokovať roboty.');
+    const perf = Math.round((lh.categories.performance?.score || 0) * 100);
+    const seo = Math.round((lh.categories.seo?.score || 0) * 100);
+    // Field data (CrUX) ak existujú
+    const crux = d.loadingExperience?.metrics || {};
+    const cwv = {
+      lcp: crux.LARGEST_CONTENTFUL_PAINT_MS ? (crux.LARGEST_CONTENTFUL_PAINT_MS.percentile / 1000).toFixed(1) + ' s (' + this.cat(crux.LARGEST_CONTENTFUL_PAINT_MS.category) + ')' : (lh.audits['largest-contentful-paint']?.displayValue || '—') + ' (lab)',
+      cls: crux.CUMULATIVE_LAYOUT_SHIFT_SCORE ? (crux.CUMULATIVE_LAYOUT_SHIFT_SCORE.percentile / 100).toFixed(2) + ' (' + this.cat(crux.CUMULATIVE_LAYOUT_SHIFT_SCORE.category) + ')' : (lh.audits['cumulative-layout-shift']?.displayValue || '—') + ' (lab)',
+      inp: crux.INTERACTION_TO_NEXT_PAINT ? crux.INTERACTION_TO_NEXT_PAINT.percentile + ' ms (' + this.cat(crux.INTERACTION_TO_NEXT_PAINT.category) + ')' : 'nedostatok field dát',
+    };
+    // Zozbieraj neúspešné audity, na ktoré máme odporúčania
+    const recs = [];
+    Object.entries(this.webRecs).forEach(([id, rec]) => {
+      const a = lh.audits[id];
+      if (a && a.score !== null && a.score < 0.9) recs.push({ ...rec, detail: a.displayValue || '' });
+    });
+    const sevRank = { critical: 0, high: 1, med: 2, low: 3 };
+    recs.sort((a, b) => sevRank[a.sev] - sevRank[b.sev] || b.impact - a.impact);
+    const overall = Math.round(perf * 0.45 + seo * 0.4 + (recs.filter(r => r.sev === 'critical').length ? 0 : 15));
+    const audit = {
+      type: 'web', url, date: Date.now(),
+      overall: Math.min(100, overall), perf, seo, cwv, recs,
+      quickWins: recs.filter(r => r.effort <= 2).slice(0, 5),
+      longTerm: recs.filter(r => r.effort >= 3),
+      adsReady: seo >= 70 && perf >= 40 ? 'Web je použiteľný ako landing page pre kampane.' : 'Pred spustením kampaní odporúčame opraviť kritické nálezy — landing page kvalita ovplyvňuje Quality Score aj konverzie.',
+    };
+    App.state.audits.unshift(audit);
+    App.state.audits = App.state.audits.slice(0, 20);
+    App.save();
+    App.addXP(50, 'AI Audit webu');
+    return audit;
+  },
+  cat(c) { return c === 'FAST' ? 'dobré' : c === 'AVERAGE' ? 'priemer' : 'zlé'; },
+
+  /* ── GBP AUDIT WIZARD — otázky a váhy ── */
+  gbpQuestions: [
+    { id: 'claimed', q: 'Je profil prevzatý (claimnutý) a verifikovaný?', w: 10, cat: 'Základ', rec: { name: 'Prevziať a verifikovať profil', sev: 'critical', impact: 5, effort: 2, time: '3–10 dní', benefit: 'Bez verifikácie firma nespravuje svoju prezentáciu', how: 'Claim na google.com/business + video verifikácia.' } },
+    { id: 'name', q: 'Je názov profilu presne reálny názov firmy (bez pridaných kľúčových slov)?', w: 6, cat: 'Základ', rec: { name: 'Opraviť názov profilu', sev: 'high', impact: 4, effort: 1, time: '30 minút', benefit: 'Súlad s pravidlami — bez rizika suspendácie', how: 'Názov = reálny názov na výklade/dokladoch.' } },
+    { id: 'category', q: 'Je primárna kategória čo najkonkrétnejšia pre core biznis?', w: 10, cat: 'Relevancia', rec: { name: 'Optimalizovať primárnu kategóriu', sev: 'critical', impact: 5, effort: 1, time: '1 hodina + analýza', benefit: 'Najsilnejší relevančný signál profilu', how: 'Analyzuj kategórie top 3 konkurentov v Local Packu, zvoľ najkonkrétnejšiu.' } },
+    { id: 'seccat', q: 'Sú doplnené relevantné sekundárne kategórie?', w: 4, cat: 'Relevancia', rec: { name: 'Doplniť sekundárne kategórie', sev: 'med', impact: 3, effort: 1, time: '30 minút', benefit: 'Pokrytie ďalších služieb', how: 'Pridaj len reálne vykonávané činnosti (max 9).' } },
+    { id: 'nap', q: 'Je NAP (názov, adresa, telefón) zhodný s webom a katalógmi?', w: 7, cat: 'Základ', rec: { name: 'Zjednotiť NAP všade', sev: 'high', impact: 4, effort: 2, time: '0,5–1 deň', benefit: 'Dôvera algoritmu v dáta o firme', how: 'Master formát NAP → web, profil, katalógy, sociálne siete.' } },
+    { id: 'hours', q: 'Sú otváracie hodiny aktuálne vrátane sviatkov (special hours)?', w: 5, cat: 'Základ', rec: { name: 'Aktualizovať hodiny + sviatky', sev: 'high', impact: 3, effort: 1, time: '30 minút', benefit: 'Menej negatívnych recenzií od zákazníkov pred zavretými dverami', how: 'Nastav special hours na celý rok dopredu.' } },
+    { id: 'desc', q: 'Je vyplnený popis firmy (využitých ~750 znakov)?', w: 3, cat: 'Obsah', rec: { name: 'Napísať popis firmy', sev: 'low', impact: 2, effort: 1, time: '1 hodina', benefit: 'Lepšia konverzia profilu', how: 'Čo robíte, pre koho, čím ste výnimoční — kľúčové info v prvých 250 znakoch.' } },
+    { id: 'services', q: 'Sú vyplnené Služby s popismi?', w: 6, cat: 'Obsah', rec: { name: 'Vyplniť služby s popismi', sev: 'med', impact: 3, effort: 2, time: '2–3 hodiny', benefit: 'Relevančné signály + justifications', how: 'Všetky služby + 300-znakové popisy s prirodzenými frázami.' } },
+    { id: 'products', q: 'Sú vytvorené Produkty (karty s fotkou a cenou)?', w: 5, cat: 'Obsah', rec: { name: 'Vytvoriť produktové karty', sev: 'med', impact: 3, effort: 2, time: '2–3 hodiny', benefit: 'Vizuálna dominancia Knowledge Panelu — quick win #1', how: 'Min. 5 produktov/balíkov s fotkou, cenou a CTA na web.' } },
+    { id: 'photos', q: 'Má profil 10+ kvalitných reálnych fotiek (nie stock) a pribúdajú nové?', w: 6, cat: 'Obsah', rec: { name: 'Doplniť fotografie + nastaviť rytmus', sev: 'med', impact: 3, effort: 2, time: '0,5 dňa + priebežne', benefit: 'Viac žiadostí o trasu a klikov', how: 'Foto scenár: exteriér 3×, interiér 5×, tím, práca. Potom 2–4 nové mesačne.' } },
+    { id: 'posts', q: 'Publikuje firma Google Posts aspoň 2× mesačne?', w: 3, cat: 'Obsah', rec: { name: 'Rozbehnúť Google Posts', sev: 'low', impact: 2, effort: 1, time: '1 h/mesiac', benefit: 'Živý profil + CTA v paneli', how: 'Recykluj obsah zo sociálnych sietí, 1–2 posty týždenne.' } },
+    { id: 'qa', q: 'Je Q&A sekcia naplnená vlastnými FAQ a monitorovaná?', w: 3, cat: 'Obsah', rec: { name: 'Naplniť a strážiť Q&A', sev: 'med', impact: 3, effort: 1, time: '2 hodiny + monitoring', benefit: 'Kontrola nad verejnými odpoveďami', how: 'Seed 5–10 FAQ, zapni notifikácie, odpovedaj do 24 h.' } },
+    { id: 'reviews-count', q: 'Má firma porovnateľný počet recenzií ako top 3 konkurencia?', w: 9, cat: 'Recenzie', rec: { name: 'Spustiť systém získavania recenzií', sev: 'critical', impact: 5, effort: 2, time: 'priebežne', benefit: 'Najsilnejší prominence signál + konverzia', how: 'Review link/QR + žiadosť po každej zákazke + follow-up SMS/e-mail.' } },
+    { id: 'reviews-reply', q: 'Odpovedá firma na (takmer) všetky recenzie?', w: 5, cat: 'Recenzie', rec: { name: 'Odpovedať na recenzie (SLA 24–48 h)', sev: 'high', impact: 3, effort: 1, time: '15 min/deň', benefit: 'Signál starostlivosti pre zákazníkov aj algoritmus', how: '4A framework, šablóny pre bežné scenáre.' } },
+    { id: 'landing', q: 'Odkazuje profil na relevantnú rýchlu stránku (s UTM parametrami)?', w: 4, cat: 'Web', rec: { name: 'Nastaviť správnu landing + UTM', sev: 'med', impact: 3, effort: 1, time: '1 hodina', benefit: 'Merateľnosť prínosu profilu v GA4', how: 'Lokálna podstránka + ?utm_source=gbp.' } },
+    { id: 'schema', q: 'Má web LocalBusiness schema markup?', w: 3, cat: 'Web', rec: { name: 'Implementovať LocalBusiness schema', sev: 'low', impact: 2, effort: 2, time: '2 hodiny', benefit: 'Strojové prepojenie webu s profilom', how: 'JSON-LD: name, address, phone, geo, openingHours, sameAs.' } },
+    { id: 'spam', q: 'Je Local Pack bez zjavného spamu konkurencie (keyword stuffing názvov)?', w: 4, cat: 'Konkurencia', rec: { name: 'Nahlásiť spam konkurencie', sev: 'med', impact: 4, effort: 2, time: '2–3 hodiny', benefit: 'Každý odstránený spamer = pozícia vyššie zadarmo', how: 'Suggest an edit + Redressal form s dôkazmi.' } },
+    { id: 'citations', q: 'Je firma v hlavných katalógoch (Zoznam, Azet, Bing, Apple Maps)?', w: 3, cat: 'Web', rec: { name: 'Vybudovať základné citácie', sev: 'low', impact: 2, effort: 2, time: '0,5 dňa', benefit: 'Prominence + konzistencia dát', how: '10–20 kvalitných katalógov s master NAP.' } },
+  ],
+
+  runGbpAudit(answers, bizName) {
+    bizName = this.clean(bizName);
+    let score = 0, totalW = 0;
+    const recs = [];
+    this.gbpQuestions.forEach(q => {
+      totalW += q.w;
+      const a = answers[q.id]; // 1 = áno, 0.5 = čiastočne, 0 = nie
+      score += q.w * (a ?? 0);
+      if ((a ?? 0) < 1) recs.push({ ...q.rec, partial: a === 0.5 });
+    });
+    const sevRank = { critical: 0, high: 1, med: 2, low: 3 };
+    recs.sort((a, b) => sevRank[a.sev] - sevRank[b.sev] || b.impact - a.impact);
+    const overall = Math.round(score / totalW * 100);
+    const audit = {
+      type: 'gbp', url: bizName, date: Date.now(), overall,
+      cats: ['Základ', 'Relevancia', 'Obsah', 'Recenzie', 'Web', 'Konkurencia'].map(c => {
+        const qs = this.gbpQuestions.filter(q => q.cat === c);
+        const s = qs.reduce((a, q) => a + q.w * (answers[q.id] ?? 0), 0);
+        const t = qs.reduce((a, q) => a + q.w, 0);
+        return { name: c, pct: Math.round(s / t * 100) };
+      }),
+      recs,
+      quickWins: recs.filter(r => r.effort <= 1).slice(0, 5),
+      longTerm: recs.filter(r => r.effort >= 2),
+    };
+    App.state.audits.unshift(audit);
+    App.state.audits = App.state.audits.slice(0, 20);
+    App.save();
+    App.addXP(60, 'GBP Audit dokončený');
+    return audit;
+  },
+
+  /* ── PORTFOLIO BUILDER: standalone HTML report na stiahnutie ── */
+  buildReport(audit) {
+    const sevColor = { critical: '#dc2626', high: '#ea580c', med: '#d97706', low: '#65a30d' };
+    const sevName = { critical: 'KRITICKÉ', high: 'VYSOKÁ', med: 'STREDNÁ', low: 'NÍZKA' };
+    const stars = n => '●'.repeat(n) + '○'.repeat(5 - n);
+    const html = `<!DOCTYPE html><html lang="sk"><head><meta charset="utf-8">
+<title>Audit — ${audit.url}</title>
+<style>
+  body{font-family:'Segoe UI',system-ui,sans-serif;margin:0;color:#18181b;background:#fff}
+  .page{max-width:820px;margin:0 auto;padding:48px 40px}
+  .head{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #6366f1;padding-bottom:20px;margin-bottom:32px}
+  .logo{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px}
+  h1{font-size:22px;margin:0}h2{font-size:16px;margin:28px 0 12px;color:#4f46e5}
+  .muted{color:#71717a;font-size:13px}
+  .score{display:flex;gap:16px;flex-wrap:wrap;margin:20px 0}
+  .sc{flex:1;min-width:140px;border:1px solid #e4e4e7;border-radius:14px;padding:16px;text-align:center}
+  .sc b{font-size:30px;display:block}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+  th,td{border:1px solid #e4e4e7;padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#fafafa}
+  .sev{display:inline-block;padding:2px 8px;border-radius:99px;color:#fff;font-size:11px;font-weight:700}
+  .qw{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px 16px;margin:8px 0}
+  .foot{margin-top:40px;padding-top:16px;border-top:1px solid #e4e4e7;font-size:11px;color:#a1a1aa;display:flex;justify-content:space-between}
+  @media print{.page{padding:20px}}
+</style></head><body><div class="page">
+  <div class="head">
+    <div style="display:flex;gap:14px;align-items:center">
+      <div class="logo">G</div>
+      <div><h1>${audit.type === 'web' ? 'Technický audit webu' : 'Audit Google Business Profile'}</h1>
+      <div class="muted">${audit.url} · ${new Date(audit.date).toLocaleDateString('sk')}</div></div>
+    </div>
+    <div style="text-align:right"><b style="font-size:34px;color:${audit.overall >= 70 ? '#16a34a' : audit.overall >= 45 ? '#d97706' : '#dc2626'}">${audit.overall}/100</b><div class="muted">celkové skóre</div></div>
+  </div>
+
+  <h2>Zhrnutie</h2>
+  <p style="font-size:14px;line-height:1.7">${audit.type === 'web'
+    ? `Web dosiahol celkové skóre <b>${audit.overall}/100</b> (výkon ${audit.perf}/100, SEO ${audit.seo}/100). Identifikovali sme <b>${audit.recs.length} odporúčaní</b>, z toho ${audit.recs.filter(r => r.sev === 'critical').length} kritických. ${audit.adsReady}`
+    : `Profil dosiahol celkové skóre <b>${audit.overall}/100</b>. Identifikovali sme <b>${audit.recs.length} odporúčaní</b> na zlepšenie viditeľnosti v lokálnom vyhľadávaní, z toho ${audit.recs.filter(r => r.sev === 'critical').length} kritických.`}</p>
+
+  <div class="score">
+  ${audit.type === 'web'
+    ? `<div class="sc"><b style="color:#6366f1">${audit.perf}</b><span class="muted">Výkon (mobile)</span></div>
+       <div class="sc"><b style="color:#6366f1">${audit.seo}</b><span class="muted">SEO</span></div>
+       <div class="sc"><b style="font-size:16px;line-height:2.2">${audit.cwv.lcp}</b><span class="muted">LCP</span></div>
+       <div class="sc"><b style="font-size:16px;line-height:2.2">${audit.cwv.cls}</b><span class="muted">CLS</span></div>`
+    : audit.cats.map(c => `<div class="sc"><b style="color:${c.pct >= 70 ? '#16a34a' : c.pct >= 45 ? '#d97706' : '#dc2626'}">${c.pct}%</b><span class="muted">${c.name}</span></div>`).join('')}
+  </div>
+
+  ${audit.quickWins.length ? `<h2>⚡ Quick Wins (rýchle výhry)</h2>
+  ${audit.quickWins.map(r => `<div class="qw"><b>${r.name}</b> — ${r.how} <span class="muted">(${r.time})</span></div>`).join('')}` : ''}
+
+  <h2>Všetky odporúčania podľa priority</h2>
+  <table><tr><th>Odporúčanie</th><th>Závažnosť</th><th>Dopad</th><th>Náročnosť</th><th>Čas</th><th>Očakávaný prínos</th></tr>
+  ${audit.recs.map(r => `<tr>
+    <td><b>${r.name}</b><br><span class="muted">${r.how}</span></td>
+    <td><span class="sev" style="background:${sevColor[r.sev]}">${sevName[r.sev]}</span></td>
+    <td>${stars(r.impact)}</td><td>${stars(r.effort)}</td><td>${r.time}</td><td>${r.benefit}</td></tr>`).join('')}
+  </table>
+
+  <div class="foot"><span>Vypracované v G-Academy · ${new Date(audit.date).toLocaleDateString('sk')}</span><span>Strana 1</span></div>
+</div></body></html>`;
+    const blob = new Blob([html], { type: 'text/html' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `audit-${(audit.url || 'report').replace(/[^a-z0-9]/gi, '-').slice(0, 40)}.html`;
+    a.click();
+    App.toast('📄 Report stiahnutý', 'Otvor v prehliadači → Ctrl+P → uložiť ako PDF', '');
+  },
+};
+
+/* ═══════════════ VIEW: AI AUDITOR ═══════════════ */
+Views.auditor = function () {
+  const history = App.state.audits || [];
+  return `
+  <div class="grid md:grid-cols-2 gap-4">
+    ${this.card(`
+      <div class="flex items-center gap-2 mb-1"><span class="text-xl">🌐</span><h3 class="font-bold text-zinc-900 dark:text-white">Audit webu</h3></div>
+      <p class="text-xs text-zinc-500 mb-3">Reálna analýza cez Google PageSpeed Insights API — výkon, Core Web Vitals, SEO kontroly. Trvá ~30 sekúnd.</p>
+      <div class="flex gap-2">
+        <input id="audit-url" placeholder="https://www.priklad.sk" class="flex-1 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+        <button onclick="Views.startWebAudit()" id="audit-btn" class="btn-press px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">Auditovať</button>
+      </div>
+      <div id="audit-status" class="text-xs text-zinc-500 mt-2"></div>`)}
+    ${this.card(`
+      <div class="flex items-center gap-2 mb-1"><span class="text-xl">📍</span><h3 class="font-bold text-zinc-900 dark:text-white">Audit Google Business Profile</h3></div>
+      <p class="text-xs text-zinc-500 mb-3">Expertný wizard — otvor si profil klienta na Maps, odpovedz na ${Auditor.gbpQuestions.length} otázok a dostaneš skóre + prioritizovaný akčný plán.</p>
+      <button onclick="Views.startGbpAudit()" class="btn-press w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold">Spustiť GBP audit</button>`)}
+  </div>
+  <div id="audit-result" class="mt-4"></div>
+  ${history.length ? `<div class="mt-4">${this.card(`
+    <h3 class="font-bold text-sm text-zinc-900 dark:text-white mb-3">📂 História auditov (Portfolio)</h3>
+    <div class="space-y-1.5">${history.map((a, i) => `
+      <div class="flex items-center gap-3 text-sm py-2 border-b border-zinc-100 dark:border-zinc-800/60 last:border-0">
+        <span>${a.type === 'web' ? '🌐' : '📍'}</span>
+        <span class="flex-1 truncate">${a.url}</span>
+        <span class="text-xs text-zinc-500">${new Date(a.date).toLocaleDateString('sk')}</span>
+        <b class="text-xs" style="color:${a.overall >= 70 ? '#10b981' : a.overall >= 45 ? '#f59e0b' : '#ef4444'}">${a.overall}/100</b>
+        <button onclick="Views.showAudit(${i})" class="text-xs font-bold text-indigo-400 hover:underline">Zobraziť</button>
+        <button onclick="Auditor.buildReport(App.state.audits[${i}])" class="text-xs font-bold text-emerald-500 hover:underline">📄 Report</button>
+      </div>`).join('')}</div>`)}</div>` : ''}`;
+};
+
+Views.startWebAudit = async function () {
+  const url = document.getElementById('audit-url').value.trim();
+  if (!url.startsWith('http')) { document.getElementById('audit-status').innerHTML = '⚠️ Zadaj celú URL vrátane https://'; return; }
+  const btn = document.getElementById('audit-btn');
+  btn.disabled = true; btn.textContent = 'Analyzujem…';
+  document.getElementById('audit-status').innerHTML = '⏳ Google Lighthouse analyzuje web (20–40 s)…';
+  try {
+    await Auditor.runWebAudit(url);
+    App.render();
+    this.showAudit(0);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Auditovať';
+    document.getElementById('audit-status').innerHTML = '❌ ' + e.message;
+  }
+};
+
+Views.showAudit = function (i) {
+  const a = App.state.audits[i];
+  if (!a) return;
+  const sevColor = { critical: '#ef4444', high: '#f97316', med: '#f59e0b', low: '#84cc16' };
+  const sevName = { critical: 'Kritické', high: 'Vysoká', med: 'Stredná', low: 'Nízka' };
+  const el = document.getElementById('audit-result');
+  el.innerHTML = `
+  <div class="rounded-2xl border-2 border-indigo-500/30 bg-white dark:bg-[#131316] p-5 animate-slide-up">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div><h3 class="font-bold text-lg text-zinc-900 dark:text-white">${a.type === 'web' ? '🌐' : '📍'} ${a.url}</h3>
+      <div class="text-xs text-zinc-500">${new Date(a.date).toLocaleString('sk')}</div></div>
+      <div class="flex items-center gap-3">
+        <div class="text-right"><b class="text-3xl" style="color:${a.overall >= 70 ? '#10b981' : a.overall >= 45 ? '#f59e0b' : '#ef4444'}">${a.overall}</b><span class="text-zinc-500 text-sm">/100</span></div>
+        <button onclick="Auditor.buildReport(App.state.audits[${i}])" class="btn-press px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold">📄 Stiahnuť report pre klienta</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      ${a.type === 'web'
+        ? `<div class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3 text-center"><b class="text-xl text-indigo-400">${a.perf}</b><div class="text-[10px] text-zinc-500">Výkon</div></div>
+           <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3 text-center"><b class="text-xl text-indigo-400">${a.seo}</b><div class="text-[10px] text-zinc-500">SEO</div></div>
+           <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3 text-center"><b class="text-sm">${a.cwv.lcp}</b><div class="text-[10px] text-zinc-500">LCP</div></div>
+           <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3 text-center"><b class="text-sm">${a.cwv.cls}</b><div class="text-[10px] text-zinc-500">CLS</div></div>`
+        : a.cats.map(c => `<div class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3 text-center"><b class="text-xl" style="color:${c.pct >= 70 ? '#10b981' : c.pct >= 45 ? '#f59e0b' : '#ef4444'}">${c.pct}%</b><div class="text-[10px] text-zinc-500">${c.name}</div></div>`).join('')}
+    </div>
+    ${a.type === 'web' ? `<div class="text-xs rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 mb-4"><b class="text-amber-500">Google Ads pripravenosť:</b> <span class="text-zinc-700 dark:text-zinc-300">${a.adsReady}</span></div>` : ''}
+    ${a.quickWins.length ? `<h4 class="font-bold text-sm text-emerald-500 mb-2">⚡ Quick Wins</h4>
+      <div class="space-y-1.5 mb-4">${a.quickWins.map(r => `<div class="text-sm rounded-xl bg-emerald-500/5 border border-emerald-500/20 px-3 py-2"><b>${r.name}</b> <span class="text-zinc-500 text-xs">· ${r.time}</span><div class="text-xs text-zinc-500">${r.how}</div></div>`).join('')}</div>` : ''}
+    <h4 class="font-bold text-sm text-zinc-900 dark:text-white mb-2">Všetky odporúčania (${a.recs.length})</h4>
+    <div class="space-y-2">
+      ${a.recs.map(r => `
+      <details class="rounded-xl border border-zinc-200 dark:border-zinc-800 px-3 py-2">
+        <summary class="cursor-pointer flex items-center gap-2 text-sm">
+          <span class="chip text-white" style="background:${sevColor[r.sev]}">${sevName[r.sev]}</span>
+          <b class="flex-1 text-zinc-800 dark:text-zinc-200">${r.name}</b>
+          <span class="text-[10px] text-zinc-500 shrink-0">${r.time}</span>
+        </summary>
+        <div class="mt-2 text-xs text-zinc-600 dark:text-zinc-400 space-y-1">
+          <div><b>Ako na to:</b> ${r.how}</div>
+          <div><b>Očakávaný prínos:</b> ${r.benefit}</div>
+          <div class="flex gap-4"><span><b>Dopad:</b> ${'●'.repeat(r.impact)}${'○'.repeat(5 - r.impact)}</span><span><b>Náročnosť:</b> ${'●'.repeat(r.effort)}${'○'.repeat(5 - r.effort)}</span></div>
+        </div>
+      </details>`).join('')}
+    </div>
+  </div>`;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+/* GBP wizard v modáli */
+Views.startGbpAudit = function (answers = {}, step = -1) {
+  const qs = Auditor.gbpQuestions;
+  if (step === -1) {
+    App.modal(`
+      <h3 class="font-bold text-lg text-zinc-900 dark:text-white mb-2">📍 GBP Audit</h3>
+      <p class="text-sm text-zinc-500 mb-4">Otvor si profil firmy na Google Maps (a jej web) a odpovedz na ${qs.length} otázok. Na konci dostaneš skóre, akčný plán a report pre klienta.</p>
+      <label class="text-xs font-semibold text-zinc-500">Názov firmy</label>
+      <input id="gbp-name" placeholder="napr. Pizzeria Bella Nitra" class="w-full mt-1 mb-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+      <button onclick="Views.startGbpAudit({}, 0)" class="btn-press w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">Začať audit</button>`);
+    return;
+  }
+  if (step === 0) Views._gbpName = document.getElementById('gbp-name')?.value.trim() || 'GBP profil';
+  if (step >= qs.length) {
+    const audit = Auditor.runGbpAudit(answers, Views._gbpName);
+    App.closeModal();
+    App.render();
+    Views.showAudit(0);
+    return;
+  }
+  const q = qs[step];
+  App.modal(`
+    <div class="text-xs text-zinc-500 mb-2">Otázka ${step + 1}/${qs.length} · ${q.cat}</div>
+    ${Views.progressBar((step + 1) / qs.length * 100, 'from-emerald-500 to-teal-400', 'h-1.5')}
+    <h3 class="font-bold text-zinc-900 dark:text-white my-4">${q.q}</h3>
+    <div class="grid grid-cols-3 gap-2">
+      <button onclick='Views.startGbpAudit(${JSON.stringify({ ...answers, [q.id]: 1 })},${step + 1})' class="btn-press py-3 rounded-xl bg-emerald-500/15 text-emerald-500 font-bold text-sm">✓ Áno</button>
+      <button onclick='Views.startGbpAudit(${JSON.stringify({ ...answers, [q.id]: 0.5 })},${step + 1})' class="btn-press py-3 rounded-xl bg-amber-500/15 text-amber-500 font-bold text-sm">~ Čiastočne</button>
+      <button onclick='Views.startGbpAudit(${JSON.stringify({ ...answers, [q.id]: 0 })},${step + 1})' class="btn-press py-3 rounded-xl bg-red-500/15 text-red-400 font-bold text-sm">✗ Nie</button>
+    </div>`);
+};
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   SIMULOVANÍ KLIENTI (50) + ROLEPLAY ENGINE + MASTER MODE „AGENTÚRA"
+   ───────────────────────────────────────────────────────────────────
+   • 50 unikátnych klientov: odvetvie, rozpočet, stav webu/profilu,
+     konkurencia, história, problémy, ciele, povaha.
+   • Roleplay: viac-kolový rozhovor s náladou klienta; hodnotí sa
+     komunikácia, argumentácia, odbornosť a profesionalita.
+   • Master Mode: 20 komplexných projektov s náhodnými udalosťami
+     (zamietnutá reklama, prepad CTR…) a záverečným hodnotením.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Katalóg problémov: kľúč → popis, očakávané témy v odpovedi ── */
+DATA.problemLib = {
+  'no-reviews':      { txt: 'takmer žiadne recenzie',                    kw: ['recenz', 'qr', 'žiada', 'follow', 'link'], advice: 'systém žiadania recenzií (QR/link + follow-up)' },
+  'neg-reviews':     { txt: 'séria negatívnych recenzií',                kw: ['odpove', '4a', 'ospravedl', 'offline', 'nahlás'], advice: 'profesionálne odpovede (4A) + nahlásenie recenzií porušujúcich pravidlá' },
+  'bad-categories':  { txt: 'zle zvolená primárna kategória profilu',    kw: ['kategó', 'konkurenc', 'local pack', 'primárn'], advice: 'analýza kategórií konkurencie a zmena primárnej kategórie' },
+  'dup-profiles':    { txt: 'duplicitné firemné profily',                kw: ['duplic', 'zlúč', 'claim', 'prevz'], advice: 'zlúčenie/odstránenie duplicít a prevzatie hlavného profilu' },
+  'spam-comp':       { txt: 'konkurencia spamuje názvy kľúčovými slovami', kw: ['spam', 'nahlás', 'redressal', 'suggest'], advice: 'spam fighting: Suggest an edit + Redressal form' },
+  'local-invisible': { txt: 'firma nie je vidieť v Local Packu',         kw: ['audit', 'kategó', 'recenz', 'vzdialen', 'prominence'], advice: 'GBP audit → kategórie, recenzie, obsah, citácie' },
+  'no-tracking':     { txt: 'kampane bežia bez merania konverzií',       kw: ['meranie', 'konverz', 'tag', 'gtm', 'consent'], advice: 'nasadenie konverzného merania + Consent Mode pred akoukoľvek optimalizáciou' },
+  'wasted-budget':   { txt: 'rozpočet sa míňa na irelevantné dopyty',    kw: ['search terms', 'negatív', 'match', 'vylúč'], advice: 'čistenie search terms + negatívne kľúčové slová + prísnejšie match types' },
+  'low-ctr':         { txt: 'reklamy majú nízke CTR',                    kw: ['rsa', 'nadpis', 'assets', 'relevan', 'ctr'], advice: 'prepis RSA (kľúčové slovo v nadpisoch, benefity) + assets' },
+  'low-qs':          { txt: 'nízke Quality Score a drahé kliky',         kw: ['quality', 'landing', 'relevan', 'ad group', 'tesn'], advice: 'tesnejšie ad groups + dedikované landing pages' },
+  'no-landing':      { txt: 'všetky reklamy vedú na homepage',           kw: ['landing', 'podstránk', 'relevan', 'konverz'], advice: 'dedikované landing pages pre témy kampaní' },
+  'pmax-brand':      { txt: 'PMax si pripisuje brandové konverzie',      kw: ['brand', 'vylúč', 'exclusion', 'inkrement'], advice: 'brand exclusions v PMax + oddelená brand kampaň' },
+  'no-negatives':    { txt: 'kampane nemajú negatívne slová',            kw: ['negatív', 'zoznam', 'zadarmo', 'search terms'], advice: 'univerzálny negatívny zoznam + týždenná rutina' },
+  'brand-mixed':     { txt: 'brand a non-brand výkony sa miešajú',       kw: ['brand', 'oddel', 'kampa', 'čist'], advice: 'oddelenie brand kampane pre čisté dáta' },
+  'feed-errors':     { txt: 'produkty zamietnuté v Merchant Center',     kw: ['feed', 'merchant', 'cen', 'title', 'gtin', 'diagnostic'], advice: 'oprava feedu: zhoda cien, GTIN, titles, Diagnostics' },
+  'migration-404':   { txt: 'po redizajne prepadla návštevnosť (404-ky)', kw: ['redirect', '301', 'mapa', 'migrác'], advice: 'redirect mapa starých → nových URL + validácia v GSC' },
+  'slow-web':        { txt: 'pomalý web, zlé Core Web Vitals',           kw: ['lcp', 'rýchlos', 'obrázk', 'cwv', 'core web'], advice: 'optimalizácia LCP (obrázky, server) + CWV monitoring' },
+  'not-indexed':     { txt: 'nové stránky sa neindexujú',                kw: ['index', 'sitemap', 'interné odkazy', 'inspection', 'kvalit'], advice: 'URL Inspection diagnóza + interné odkazy + sitemap' },
+  'soft404':        { txt: 'tisíce soft 404 stránok míňajú crawl budget', kw: ['soft 404', 'prázdne', '410', 'noindex'], advice: 'vyčistenie prázdnych stránok (obsah / 404 / 301)' },
+  'cannibal':        { txt: 'viac článkov súťaží o rovnaký dopyt',       kw: ['kanibal', 'zlúč', '301', 'konsolid'], advice: 'konsolidácia obsahu + 301 slabších článkov' },
+  'no-schema':       { txt: 'web nemá structured data',                  kw: ['schema', 'json', 'rich', 'markup'], advice: 'JSON-LD markup (Product/LocalBusiness) pre rich results' },
+  'seasonal':        { txt: 'sezónny biznis s výkyvmi dopytu',           kw: ['sezón', 'medziroč', 'rozpoč', 'plán'], advice: 'sezónne plánovanie rozpočtov + medziročné porovnávanie' },
+};
+
+/* ── 50 KLIENTOV ──
+   [meno, osoba, odvetvie, mesto, rozpočet €/mes, web(ok/bad/none),
+    gbp(none/unclaimed/weak/good), konkurencia, povaha, história, problémy[], ciele] */
+DATA.clients = [
+  ['Dental Smile', 'MUDr. Eva Krajčová', 'Zubná ambulancia', 'Bratislava', 800, 'ok', 'weak', 'high', 'analytical', 'Nová ambulancia, 2 roky na trhu.', ['no-reviews', 'local-invisible'], 'Plný diár nových pacientov'],
+  ['AutoFix Pro', 'Peter Molnár', 'Autoservis', 'Nitra', 500, 'bad', 'unclaimed', 'med', 'friendly', '15 rokov servisu, web z roku 2012.', ['dup-profiles', 'slow-web'], 'Viac zákaziek na pneuservis'],
+  ['Reality Horizont', 'Ing. Jana Bieliková', 'Realitná kancelária', 'Košice', 1500, 'ok', 'good', 'high', 'impatient', 'Kampane robili sami, míňali bez výsledkov.', ['no-tracking', 'wasted-budget'], 'Leady na predaj bytov pod 40 €'],
+  ['AK Urban & Partners', 'JUDr. Marek Urban', 'Advokátska kancelária', 'Bratislava', 1200, 'ok', 'weak', 'high', 'skeptical', 'Skúsili agentúru, sklamali sa.', ['low-qs', 'no-landing'], 'Klienti na obchodné právo'],
+  ['Trattoria Rosa', 'Giovanni Rossi', 'Reštaurácia', 'Bratislava', 400, 'ok', 'good', 'high', 'friendly', 'Skvelé jedlo, slabá viditeľnosť.', ['neg-reviews', 'spam-comp'], 'Viac rezervácií cez víkendy'],
+  ['GreenDev', 'Ing. Tomáš Novotný', 'Developer', 'Žilina', 3000, 'ok', 'none', 'med', 'analytical', 'Predávajú novú etapu projektu.', ['no-tracking', 'no-landing'], '30 dopytov na byty mesačne'],
+  ['Kaviareň Lúčka', 'Zuzana Dvončová', 'Kaviareň', 'Trnava', 200, 'none', 'weak', 'med', 'chaotic', 'Malá kaviareň, žiadny marketing.', ['no-reviews', 'local-invisible'], 'Viac miestnych zákazníkov'],
+  ['ElektroMax.sk', 'Milan Baran', 'E-shop s elektronikou', 'online', 5000, 'ok', 'none', 'high', 'analytical', 'Rastú, ale ROAS stagnuje.', ['feed-errors', 'pmax-brand'], 'ROAS 500 % pri raste útraty'],
+  ['Hotel Panoráma', 'Mgr. Alena Piatková', 'Hotel', 'Vysoké Tatry', 2000, 'ok', 'good', 'high', 'friendly', 'Závislí od booking portálov.', ['seasonal', 'low-ctr'], 'Viac priamych rezervácií'],
+  ['StavPro', 'Jozef Hric', 'Stavebná firma', 'Banská Bystrica', 700, 'bad', 'unclaimed', 'low', 'skeptical', 'Zákazky len z odporúčaní.', ['dup-profiles', 'no-reviews'], 'Stabilný prísun dopytov'],
+  ['Účtovníctvo Presné', 'Ing. Mária Tóthová', 'Účtovníctvo', 'Nitra', 300, 'ok', 'weak', 'med', 'analytical', 'Chcú rásť o 10 klientov ročne.', ['local-invisible', 'no-landing'], 'B2B klienti — s.r.o. v okrese'],
+  ['Elektro Švec', 'Ondrej Švec', 'Elektrikár', 'Trenčín', 250, 'none', 'none', 'low', 'friendly', 'Živnostník, chce prvé online kroky.', ['no-reviews', 'local-invisible'], 'Telefonáty na súrne opravy'],
+  ['Fit Zone', 'Katarína Vlčková', 'Fitness centrum', 'Prešov', 600, 'ok', 'good', 'med', 'impatient', 'Januárová vlna vždy odíde.', ['seasonal', 'no-tracking'], 'Celoročný prísun členstiev'],
+  ['Pet Shop Maxík', 'Lucia Hrušková', 'Chovateľské potreby', 'Martin', 450, 'ok', 'weak', 'med', 'friendly', 'Kamenná predajňa + malý e-shop.', ['feed-errors', 'no-reviews'], 'Online objednávky krmiva'],
+  ['Autoškola Jazdi', 'Roman Kolár', 'Autoškola', 'Žilina', 350, 'bad', 'weak', 'med', 'chaotic', 'Web robí synovec.', ['slow-web', 'low-ctr'], 'Naplniť 3 kurzy mesačne'],
+  ['Krásne Vlasy', 'Simona Ballová', 'Kaderníctvo', 'Bratislava', 150, 'none', 'good', 'high', 'friendly', 'Instagram im funguje, Google ignorovali.', ['no-reviews', 'spam-comp'], 'Rezervácie nových klientiek'],
+  ['TechFix Servis', 'Adam Kučera', 'Servis počítačov', 'Košice', 400, 'ok', 'weak', 'med', 'analytical', 'Konkurujú veľkým reťazcom.', ['low-qs', 'no-negatives'], 'Servisné zákazky B2B'],
+  ['Vinárstvo Terra', 'Pavol Šimko', 'Vinárstvo', 'Modra', 500, 'ok', 'none', 'low', 'friendly', 'Predávajú cez veľkoobchod, chcú D2C.', ['no-schema', 'no-tracking'], 'Predaj vína cez e-shop'],
+  ['Zámočník NONSTOP', 'Igor Malík', 'Zámočníctvo', 'Bratislava', 600, 'bad', 'weak', 'high', 'impatient', 'Trh plný spamerov a lead-gen podvodov.', ['spam-comp', 'wasted-budget'], 'Hovory na otváranie dverí'],
+  ['Optika Jasno', 'Mgr. Viera Očenášová', 'Optika', 'Trnava', 300, 'ok', 'good', 'med', 'analytical', 'Solídny biznis, chcú viac vyšetrení.', ['low-ctr', 'no-landing'], 'Rezervácie meraní zraku'],
+  ['Sťahovanie Rýchlo', 'Marek Držík', 'Sťahovacie služby', 'celé SK', 550, 'ok', 'unclaimed', 'med', 'chaotic', 'SAB biznis, jazdí po celom kraji.', ['dup-profiles', 'wasted-budget'], 'Dopyty na firemné sťahovania'],
+  ['Jazyková škola Speak', 'PhDr. Nina Lacková', 'Jazyková škola', 'Bratislava', 900, 'ok', 'weak', 'high', 'friendly', 'Konkurencia masívne inzeruje.', ['brand-mixed', 'low-qs'], 'Zápisy do firemných kurzov'],
+  ['Cukráreň Vanilka', 'Eva Šulcová', 'Cukráreň', 'Piešťany', 180, 'none', 'weak', 'low', 'friendly', 'Torty na objednávku, IG funguje.', ['no-reviews', 'local-invisible'], 'Objednávky svadobných tort'],
+  ['SolarTech SK', 'Ing. Peter Gajdoš', 'Fotovoltika', 'celé SK', 2500, 'ok', 'none', 'high', 'analytical', 'Trh ochladol po dotačnom boome.', ['wasted-budget', 'no-landing'], 'Kvalifikované dopyty pod 60 €'],
+  ['Móda Nina', 'Nina Príkopová', 'E-shop s módou', 'online', 3500, 'ok', 'none', 'high', 'impatient', 'Meta Ads zdraželi, hľadajú diverzifikáciu.', ['feed-errors', 'no-tracking'], 'ROAS 400 % z Google'],
+  ['Fyzio Aktív', 'Mgr. Ján Baláž', 'Fyzioterapia', 'Nitra', 350, 'ok', 'weak', 'med', 'friendly', 'Plná kapacita o 2 mesiace — chcú stabilitu.', ['no-reviews', 'not-indexed'], 'Stabilné objednávky terapií'],
+  ['Autopožičovňa Drive', 'Filip Urblík', 'Autopožičovňa', 'Bratislava', 800, 'ok', 'weak', 'high', 'skeptical', 'Cenová vojna s konkurenciou.', ['low-ctr', 'brand-mixed'], 'Rezervácie na dlhodobý prenájom'],
+  ['Záhradníctvo Flóra', 'Anna Ružičková', 'Záhradníctvo', 'Zvolen', 250, 'bad', 'good', 'low', 'friendly', 'Sezónny biznis jar/jeseň.', ['seasonal', 'slow-web'], 'Jarný nápor zvládnuť online'],
+  ['DetOX Čistiareň', 'Braňo Mikuš', 'Čistiareň odevov', 'Bratislava', 200, 'none', 'weak', 'med', 'chaotic', '3 pobočky, každá iné údaje na webe.', ['dup-profiles', 'local-invisible'], 'Zjednotiť pobočky + viac zákaziek'],
+  ['LawTech Consulting', 'JUDr. Ivana Šebová', 'Právne poradenstvo B2B', 'Bratislava', 1000, 'ok', 'none', 'med', 'analytical', 'Nový butik, nulová viditeľnosť.', ['not-indexed', 'no-landing'], 'B2B leady na GDPR audity'],
+  ['Pekáreň Chlebík', 'Martin Bosák', 'Pekáreň', 'Ružomberok', 150, 'none', 'unclaimed', 'low', 'friendly', 'Profil vytvoril Google automaticky.', ['dup-profiles', 'no-reviews'], 'Ranné návštevy miestnych'],
+  ['SwimAcademy', 'Mgr. Petra Vodová', 'Plavecká škola', 'Košice', 400, 'ok', 'weak', 'med', 'impatient', 'Kurzy sa plnia na poslednú chvíľu.', ['seasonal', 'low-ctr'], 'Naplniť kurzy mesiac vopred'],
+  ['Strechy Kováč', 'Ľubomír Kováč', 'Strechárske práce', 'Prešov', 450, 'bad', 'weak', 'med', 'skeptical', '„Internetu neverím, ale konkurencia rastie."', ['no-reviews', 'slow-web'], 'Dopyty na rekonštrukcie striech'],
+  ['Yoga Space', 'Dominika Tichá', 'Yoga štúdio', 'Bratislava', 250, 'ok', 'good', 'high', 'friendly', 'Komunita je, rast sa zastavil.', ['cannibal', 'low-ctr'], 'Noví členovia na mesačné členstvá'],
+  ['AutoUmyváreň Lesk', 'Rasťo Dubec', 'Ručná umyváreň', 'Trnava', 200, 'none', 'weak', 'med', 'chaotic', 'Detailing robia najlepšie v okolí.', ['no-reviews', 'local-invisible'], 'Rezervácie na detailing balíky'],
+  ['MedSpa Elixír', 'MUDr. Laura Fialová', 'Estetická medicína', 'Bratislava', 1800, 'ok', 'weak', 'high', 'impatient', 'Vysoká hodnota zákazníka, drahé kliky.', ['low-qs', 'no-tracking'], 'Konzultácie pod 35 €'],
+  ['Kníhkupectvo Literka', 'Alica Vargová', 'Kníhkupectvo', 'Banská Bystrica', 300, 'ok', 'good', 'med', 'friendly', 'E-shop + predajňa, malé objednávky.', ['no-schema', 'feed-errors'], 'Rast online objednávok'],
+  ['HomeCleaning Pro', 'Iveta Šálková', 'Upratovacie služby', 'Bratislava', 500, 'ok', 'none', 'high', 'analytical', 'B2C aj B2B upratovanie, SAB.', ['no-landing', 'wasted-budget'], 'Pravidelné B2B kontrakty'],
+  ['Rybárske Potreby Splávik', 'Milan Ostrih', 'Špecializovaný obchod', 'Komárno', 250, 'bad', 'weak', 'low', 'friendly', 'Niche komunita, verní zákazníci.', ['slow-web', 'no-reviews'], 'Zákazníci z celého regiónu'],
+  ['IT Kurzy CodeNow', 'Ing. Dávid Herda', 'Vzdelávanie IT', 'online', 1500, 'ok', 'none', 'high', 'analytical', 'Kurzy programovania pre dospelých.', ['cannibal', 'brand-mixed'], 'Prihlášky na bootcamp'],
+  ['Veterinár VetCare', 'MVDr. Soňa Králiková', 'Veterinárna ambulancia', 'Žilina', 300, 'ok', 'good', 'med', 'friendly', 'Milovaní, ale nedostupní — plno.', ['neg-reviews', 'no-landing'], 'Presun rutiny na online obj.'],
+  ['Moto Servis Rider', 'Erik Čierny', 'Servis motocyklov', 'Trenčín', 300, 'none', 'unclaimed', 'low', 'chaotic', 'Sezóna apríl–október.', ['seasonal', 'dup-profiles'], 'Naplniť jarné termíny'],
+  ['Svadobný Salón Bella', 'Diana Weissová', 'Svadobný salón', 'Nitra', 350, 'ok', 'weak', 'med', 'friendly', 'Dlhý rozhodovací proces nevesty.', ['no-reviews', 'low-ctr'], 'Termíny skúšok šiat'],
+  ['GastroDodávky HoReCa', 'Štefan Polák', 'B2B distribúcia gastro', 'celé SK', 1200, 'ok', 'none', 'med', 'skeptical', 'Obchodníci v teréne, online nula.', ['not-indexed', 'no-landing'], 'B2B dopyty reštaurácií'],
+  ['Klimatizácie AirFlow', 'Marcel Vetrík', 'Klimatizácie a servis', 'Bratislava', 700, 'ok', 'weak', 'high', 'impatient', 'Leto = zlatá horúčka, zima = mŕtvo.', ['seasonal', 'wasted-budget'], 'Vyhladiť sezónu servismi'],
+  ['Farby-Laky Duha', 'Vlado Farbiar', 'Predajňa farieb', 'Prievidza', 200, 'bad', 'weak', 'low', 'friendly', 'Konkuruje im OBI.', ['local-invisible', 'slow-web'], 'Miestni majstri a domácnosti'],
+  ['TattooArt Studio', 'Rebeka Čiernik', 'Tetovacie štúdio', 'Košice', 250, 'none', 'good', 'med', 'chaotic', 'IG plný, Google prázdny.', ['no-reviews', 'spam-comp'], 'Rezervácie na väčšie projekty'],
+  ['Bazény AquaJoy', 'Ing. Radoslav Vlna', 'Predaj a montáž bazénov', 'celé SK', 1600, 'ok', 'none', 'med', 'analytical', 'Drahý produkt, dlhý cyklus.', ['no-tracking', 'seasonal'], 'Kvalifikované dopyty na montáž'],
+  ['Senior Care Láskavo', 'Mgr. Helena Dobrá', 'Opatrovateľské služby', 'Bratislava', 600, 'ok', 'weak', 'med', 'friendly', 'Citlivá cieľovka — rozhodujú deti seniorov.', ['no-reviews', 'no-landing'], 'Dopyty rodín na opateru'],
+  ['Grand Optika Group', 'Ing. Norbert Skala', 'Sieť optík (8 pobočiek)', 'celé SK', 4000, 'ok', 'weak', 'high', 'analytical', 'Každá pobočka iný chaos.', ['dup-profiles', 'brand-mixed'], 'Štandardizovať a rásť ako sieť'],
+].map((c, i) => ({
+  id: 'cl' + (i + 1), name: c[0], person: c[1], industry: c[2], city: c[3], budget: c[4],
+  web: c[5], gbp: c[6], competition: c[7], personality: c[8], history: c[9], problems: c[10], goal: c[11],
+  master: i % 5 !== 4, // ~40 klientov vhodných na roleplay, 20 z nich sú master projekty (označené nižšie)
+}));
+/* 20 master projektov = prvých 20 klientov s najvyššími rozpočtami */
+(() => {
+  const sorted = [...DATA.clients].sort((a, b) => b.budget - a.budget).slice(0, 20).map(c => c.id);
+  DATA.clients.forEach(c => c.master = sorted.includes(c.id));
+})();
+
+/* ── Udalosti pre Master Mode (možnosti: score 0–2 + feedback) ── */
+DATA.masterEvents = [
+  { txt: '🚨 Google zamietol tvoju hlavnú reklamu — „Nedostupná cieľová stránka".', opts: [
+    ['Vytvorím novú reklamu s iným textom', 0, 'Text nie je problém — dôvod je landing page. Reklama by bola zamietnutá znova.'],
+    ['Skontrolujem dostupnosť a rýchlosť landing page a požiadam o prehodnotenie', 2, 'Presne — „Destination not working" znamená nedostupný/nefunkčný web. Fix + re-review.'],
+    ['Počkám, možno sa to opraví samo', 0, 'Zamietnutá reklama sa sama neopraví — kampaň stojí a klient platí za nič.']]},
+  { txt: '⭐ Klient dostal 1★ recenziu: „Katastrofa, nikdy viac!" — bez detailov.', opts: [
+    ['Odpoviem profesionálne (4A) a pokúsim sa presunúť riešenie offline', 2, 'Správne — verejná odpoveď je pre budúcich zákazníkov, detaily patria do súkromného kanála.'],
+    ['Poradím klientovi recenziu ignorovať', 0, 'Neodpovedaná negatívna recenzia odrádza zákazníkov a signalizuje nezáujem.'],
+    ['Nahlásim recenziu Googlu, nech ju zmaže', 1, 'Nahlásiť možno len recenzie porušujúce pravidlá — všeobecná nespokojnosť medzi ne nepatrí. Odpoveď je nutná tak či tak.']]},
+  { txt: '📉 CTR kampane kleslo za 2 týždne z 6 % na 2,8 %.', opts: [
+    ['Zvýšim bidy, nech sme vyššie', 1, 'Vyššia pozícia môže CTR zdvihnúť, ale nerieši príčinu — najprv diagnostika (SERP, konkurencia, search terms).'],
+    ['Skontrolujem Auction Insights a search terms — čo sa zmenilo v aukcii a dopytoch', 2, 'Správny prístup: najprv príčina (nový konkurent? iné dopyty? únava kreatívy?), potom liek.'],
+    ['Vypnem kampaň', 0, 'Vypnutie bez diagnózy zahodí dáta aj momentum. CTR pokles je signál na analýzu, nie paniku.']]},
+  { txt: '💸 Klient volá: „Znižujem rozpočet na polovicu, výsledky nevidím."', opts: [
+    ['Súhlasím bez diskusie — klient má vždy pravdu', 1, 'Ústretovosť áno, ale bez dát klient nevidí, čo stráca. Chýba ti argumentácia hodnotou.'],
+    ['Ukážem dáta: čo rozpočet priniesol, čo polovica znamená pre výsledky, a navrhnem koncentráciu na najvýkonnejšie kampane', 2, 'Profesionál: dáta + dôsledky + plán B. Rozpočet sa možno zníži, ale informovane a s prioritizáciou.'],
+    ['Poviem mu, že to je chyba a výsledky prídu', 0, 'Prázdne sľuby bez dát dôveru nezachránia — presne tak sa klienti strácajú.']]},
+  { txt: '⚔️ Konkurencia spustila agresívne kampane na brand tvojho klienta.', opts: [
+    ['Spustím obrannú brand kampaň s vysokým Impression Share cieľom', 2, 'Brand obrana je lacná a účinná — vlastný brand má najvyšší QS, konkurent platí násobne viac.'],
+    ['Začnem bidovať na brand konkurencie ako odvetu', 1, 'Možné, ale drahé (nízky QS) a eskaluje vojnu. Najprv obrana vlastného brandu.'],
+    ['Nič — na brand klienta predsa nikto nemôže', 0, 'Môže — bidovanie na cudzí brand je povolené. Bez obrany konkurent zbiera tvojich najhorúcejších zákazníkov.']]},
+  { txt: '🛒 Merchant Center zamietol 40 % produktov: „nesúlad cien".', opts: [
+    ['Skontrolujem synchronizáciu feedu a webu a zapnem automatické aktualizácie cien', 2, 'Presne — cena vo feede sa musí zhodovať s webom. Automatika + pravidelný refresh feedu.'],
+    ['Zmažem zamietnuté produkty z feedu', 0, 'Prídeš o 40 % sortimentu v Shopping — problém je synchronizácia, nie produkty.'],
+    ['Založím nový Merchant Center účet', 0, 'Nový účet s rovnakou chybou skončí rovnako — a opakované zakladanie účtov je rizikové.']]},
+  { txt: '📵 Klientovi prestali chodiť konverzie — nula už 3 dni, útrata beží.', opts: [
+    ['Kampane sa pokazili — vypnem ich, kým sa to nevyrieši', 1, 'Zastavenie útraty je pochopiteľné, ale pravdepodobná príčina je meranie — najprv over tag.'],
+    ['Otestujem konverzné meranie (Tag Assistant, testovacia konverzia) — náhla nula je takmer vždy technika', 2, 'Správne — nulové konverzie pri bežnej útrate = rozbitý tag/web/formulár, nie trh.'],
+    ['Zvýšim rozpočet, nech sa konverzie vrátia', 0, 'Liať viac peňazí do nemeraného systému je najhoršia možná reakcia.']]},
+  { txt: '🗺️ Profil klienta zmizol z Maps — „suspendovaný".', opts: [
+    ['Založím okamžite nový profil', 0, 'Duplicitný profil počas suspendácie porušuje pravidlá a môže zablokovať aj odvolanie.'],
+    ['Zistím príčinu (zmeny na profile? pravidlá?), opravím a podám odvolanie s dokladmi', 2, 'Správny proces: príčina → náprava → appeal s dôkazmi (doklady, fotky prevádzky).'],
+    ['Poviem klientovi, že Google sa zbláznil a treba čakať', 0, 'Suspendácie majú dôvody a formálny appeal proces — čakanie nič nevyrieši.']]},
+  { txt: '🤖 Klient si prečítal o PMax a žiada: „Zrušme všetko, dajme všetko do PMax!"', opts: [
+    ['Vysvetlím role kampaní: PMax ako doplnok Search základu, brand oddelene, a navrhnem test', 2, 'Presne — PMax nie je náhrada štruktúry. Vysvetlenie + kontrolovaný experiment = profesionálny prístup.'],
+    ['Urobím, čo klient chce', 0, 'Slepé vykonanie by zničilo fungujúcu štruktúru a čisté dáta — tvoja práca je aj poradiť.'],
+    ['Odmietnem — PMax je čierna skrinka a nepoužívame ho', 1, 'Paušálne odmietnutie moderného nástroja tiež nie je odbornosť — PMax má svoje miesto.']]},
+  { txt: '📊 Mesačný report: CPA vzrástlo o 20 %, klient čaká vysvetlenie.', opts: [
+    ['Pošlem tabuľku s číslami, nech si to pozrie', 0, 'Report bez interpretácie je nedokončená práca — klient číslam nerozumie.'],
+    ['Analyzujem príčinu (aukcia? sezóna? zmeny?), vysvetlím ľudskou rečou a priložím plán nápravy', 2, 'Interpretácia + príčina + plán — presne za toto si klient platí špecialistu.'],
+    ['Číslo v reporte radšej nezvýrazním', 0, 'Skrývanie sa vždy prevalí a zničí dôveru. Zlé správy komunikuj proaktívne.']]},
+  { txt: '🔍 Po nasadení novej šablóny webu klesla organika o 30 %.', opts: [
+    ['Skontrolujem technickú regresiu: noindex, robots.txt, canonicaly, zmeny URL', 2, 'Prepad po nasadení = takmer vždy technická chyba v novej verzii. Systematický technický audit.'],
+    ['Počkáme — Google si zvykne', 0, 'Ak nová verzia blokuje indexáciu, čakanie prepad len prehĺbi.'],
+    ['Kúpim spätné odkazy na posilnenie', 0, 'Odkazy neriešia technickú príčinu a kupovanie porušuje pravidlá.']]},
+  { txt: '💬 Klient chce kúpiť 50 recenzií „na rozbeh" — „všetci to tak robia".', opts: [
+    ['Odmietnem a vysvetlím riziká (filter, strata dôvery, pravidlá) + ponúknem legálny systém žiadania recenzií', 2, 'Etika + alternatíva. Kúpené recenzie sú zakázané a spam filter ich aj tak zoberie.'],
+    ['Kúpim ich cez spoľahlivého dodávateľa', 0, 'Porušenie pravidiel s rizikom pre profil klienta — a tvoju reputáciu.'],
+    ['Poviem, že sa to nedá', 1, 'Odmietnutie je správne, ale bez vysvetlenia a alternatívy klient pôjde za niekým „ochotnejším".']]},
+  { txt: '⏰ Sezóna klienta vrcholí o 6 týždňov a kampane ešte len spúšťaš.', opts: [
+    ['Spustím všetko naraz s maximálnym rozpočtom', 1, 'Rýchlosť áno, ale bez learning fázy a čistenia dopytov spáliš veľa. Postupný nábeh je efektívnejší.'],
+    ['Spustím ihneď core Search s prísnym cielením, nech sa systém učí, a rozpočet stupňujem k sezóne', 2, 'Presne — learning fáza prebehne pred špičkou a do sezóny vstupuješ s vyladeným účtom.'],
+    ['Radšej počkám na začiatok sezóny', 0, 'Premeškáš learning fázu — kampane sa budú učiť počas najdrahších týždňov.']]},
+  { txt: '🧾 Klient sa pýta: „Prečo platíme za kliky na naše vlastné meno? Veď nás nájdu aj tak."', opts: [
+    ['Vysvetlím: obrana pred konkurenciou, kontrola správy, lacné konverzie — a ukážem dáta Impression Share na brande', 2, 'Korektná odpoveď s dátami. Ak na brand nikto nebiduje, možno kampaň netreba — rozhodnú dáta.'],
+    ['Brand kampaň okamžite vypnem', 1, 'Ak konkurencia na brand biduje, vypnutie ju pustí na vrch — najprv over aukciu.'],
+    ['Poviem, že to tak robia všetci', 0, '„Všetci to tak robia" nie je argument — klient si zaslúži vecné vysvetlenie.']]},
+];
+
+/* ═══════════════ ROLEPLAY ENGINE v2 ═══════════════ */
+const Roleplay = {
+  session: null, // { client, round, mood, scores:{comm,arg,expert,prof}, log }
+
+  start(clientId) {
+    const c = DATA.clients.find(x => x.id === clientId);
+    this.session = { client: c, round: 1, mood: c.personality === 'skeptical' || c.personality === 'impatient' ? 'wary' : 'neutral', scores: { comm: 0, arg: 0, expert: 0, prof: 0 }, maxRounds: 3 };
+    const moodTxt = { friendly: 'priateľsky', skeptical: 'skepticky', impatient: 'netrpezlivo', analytical: 'vecne', chaotic: 'chaoticky' }[c.personality];
+    this.renderChat(`<b>${c.person}</b> (${c.name}, ${c.industry}) pôsobí ${moodTxt}:<br><br><i>„${this.intro(c)}"</i>`);
+  },
+  intro(c) {
+    const probs = c.problems.map(p => DATA.problemLib[p].txt).join(' a ');
+    const openers = {
+      friendly: `Dobrý deň! Odporučili nám vás. Máme ${c.industry.toLowerCase()} v ${c.city} a trápi nás, že ${probs}. Cieľ? ${c.goal}. Rozpočet vieme dať okolo ${c.budget} € mesačne. Čo na to hovoríte?`,
+      skeptical: `Dobrý deň. Poviem otvorene — marketérom moc neverím. ${c.history} Ale fakt je, že ${probs}. Ak by ste ma vedeli presvedčiť... cieľ je ${c.goal.toLowerCase()}. Prečo by som mal veriť práve vám?`,
+      impatient: `Dobrý deň, poďme rovno k veci, nemám veľa času. ${c.industry}, ${c.city}, problém: ${probs}. Potrebujem ${c.goal.toLowerCase()} — a rýchlo. Koľko a za aký čas?`,
+      analytical: `Dobrý deň. Pripravil som si podklady: ${c.history} Identifikovali sme, že ${probs}. KPI: ${c.goal.toLowerCase()}, mesačný rozpočet ${c.budget} €. Zaujíma ma váš konkrétny postup a metriky.`,
+      chaotic: `Jéj, dobrý deň! Tak ja ani neviem kde začať... ${c.history} No a vraj ${probs}? Alebo to bolo niečo iné... Každopádne chceme ${c.goal.toLowerCase()}. Pomôžete? Čo máme robiť?`,
+    };
+    return openers[c.personality];
+  },
+  evaluate(text) {
+    const t = text.toLowerCase();
+    const c = this.session.client;
+    // odbornosť: trafené témy z problémov klienta
+    const allKw = c.problems.flatMap(p => DATA.problemLib[p].kw);
+    const expertHits = allKw.filter(k => t.includes(k)).length;
+    // argumentácia: čísla, dáta, proces, prečo
+    const argHits = ['dát', 'čísl', 'merat', 'krok', 'najprv', 'preto', 'napríklad', 'audit', '%', '€'].filter(k => t.includes(k)).length;
+    // komunikácia: dĺžka primeraná, otázky na klienta, oslovenie
+    const commHits = (t.length > 80 ? 1 : 0) + (t.includes('?') ? 1 : 0) + (['rozumiem', 'chápem', 'dobrá otázka', 'súhlas'].some(k => t.includes(k)) ? 1 : 0);
+    // profesionalita: bez prehnaných sľubov
+    const badPromise = ['garantujem', 'zaručujem', 'prvé miesto', 'do týždňa', '100 %'].some(k => t.includes(k));
+    const profScore = badPromise ? 0 : (['realis', 'očakáv', 'týždn', 'mesiac', 'postupne'].some(k => t.includes(k)) ? 2 : 1);
+    const s = this.session.scores;
+    s.expert += Math.min(2, expertHits);
+    s.arg += Math.min(2, argHits >= 2 ? 2 : argHits);
+    s.comm += Math.min(2, commHits);
+    s.prof += profScore;
+    // nálada klienta
+    const roundScore = Math.min(2, expertHits) + profScore;
+    if (badPromise) this.session.mood = 'angry';
+    else if (roundScore >= 3) this.session.mood = 'happy';
+    else if (roundScore <= 1) this.session.mood = this.session.mood === 'wary' ? 'angry' : 'wary';
+    return { expertHits, badPromise, roundScore };
+  },
+  reply(evalR) {
+    const c = this.session.client;
+    const advice = c.problems.map(p => DATA.problemLib[p].advice)[this.session.round - 2] || DATA.problemLib[c.problems[0]].advice;
+    if (evalR.badPromise) return `„Moment — ${['garancie', 'prvé miesto', 'do týždňa'].find(x => true)}? To mi sľuboval aj minulý dodávateľ a dopadlo to zle. Teraz vám verím menej. Skúste znova — bez zázrakov."`;
+    if (this.session.mood === 'happy') {
+      const replies = [
+        `„Dobre, to znie rozumne. A čo konkrétne by ste riešili ako prvé — a dokedy uvidím prvé čísla?"`,
+        `„Páči sa mi ten prístup. Posledná vec: rozpočet ${c.budget} € — stačí to vôbec? A ako budeme merať, či to funguje?"`,
+      ];
+      return replies[this.session.round - 2] || replies[0];
+    }
+    if (this.session.mood === 'angry') return `„Úprimne? Nepresvedčili ste ma. Hovoríte všeobecne. Náš problém je ${DATA.problemLib[c.problems[0]].txt} — počul som, že sa to rieši cez ${advice}. Viete o tom niečo?"`;
+    const nextProb = c.problems[Math.min(this.session.round - 1, c.problems.length - 1)];
+    return `„Hm, čiastočne rozumiem, ale stále mi nie je jasný postup. Konkrétne — čo spravíte s tým, že ${DATA.problemLib[nextProb].txt}?"`;
+  },
+  finish() {
+    const s = this.session.scores;
+    const max = this.session.maxRounds * 2;
+    const pct = k => Math.round(Math.min(100, s[k] / max * 100));
+    const total = Math.round((pct('comm') + pct('arg') + pct('expert') + pct('prof')) / 4);
+    App.state.roleplaysDone = (App.state.roleplaysDone || 0) + 1;
+    App.save();
+    App.addXP(30 + Math.round(total / 2), 'Roleplay s klientom');
+    const grade = total >= 80 ? '🏆 Výborné — klient by podpísal zmluvu.' : total >= 55 ? '👍 Solídne — klient si vyžiada ešte jedno stretnutie.' : '📚 Klient sa „ozve neskôr". Pozri si tipy nižšie a skús iného klienta.';
+    const c = this.session.client;
+    const html = `
+      <div class="text-center mb-3"><div class="text-4xl">${total >= 80 ? '🏆' : total >= 55 ? '🤝' : '📚'}</div>
+      <div class="font-bold text-lg text-zinc-900 dark:text-white">Hodnotenie: ${total} %</div>
+      <div class="text-sm text-zinc-500">${grade}</div></div>
+      ${[['💬 Komunikácia', 'comm'], ['📊 Argumentácia', 'arg'], ['🎓 Odbornosť', 'expert'], ['🤵 Profesionalita', 'prof']].map(([n, k]) => `
+        <div class="flex items-center gap-2 text-sm mb-1.5"><span class="w-36">${n}</span>
+        <div class="flex-1 h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden"><div class="h-full rounded-full ${pct(k) >= 60 ? 'bg-emerald-500' : 'bg-amber-500'}" style="width:${pct(k)}%"></div></div>
+        <b class="w-10 text-right text-xs">${pct(k)} %</b></div>`).join('')}
+      <div class="mt-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-3 text-xs text-zinc-700 dark:text-zinc-300">
+        <b class="text-indigo-400">Čo klient potreboval počuť:</b> ${c.problems.map(p => DATA.problemLib[p].advice).join(' · ')}
+      </div>`;
+    this.session = null;
+    return html;
+  },
+  renderChat(clientHtml, feedback) {
+    const s = this.session;
+    const moodEmoji = { neutral: '😐', wary: '🤨', happy: '🙂', angry: '😠' };
+    App.modal(`
+      <div class="flex items-center justify-between mb-3">
+        <div><h3 class="font-bold text-zinc-900 dark:text-white">${s ? s.client.name : 'Roleplay'}</h3>
+        ${s ? `<div class="text-xs text-zinc-500">Kolo ${s.round}/${s.maxRounds} · nálada klienta: ${moodEmoji[s.mood]} · rozpočet ${s.client.budget} €/mes.</div>` : ''}</div>
+        <button onclick="Roleplay.session=null;App.closeModal()" class="text-zinc-400 hover:text-red-400"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      ${feedback ? `<div class="mb-3 text-xs rounded-xl bg-zinc-100 dark:bg-zinc-800/70 p-3">${feedback}</div>` : ''}
+      <div class="rounded-2xl bg-zinc-100 dark:bg-zinc-800/70 p-4 text-sm text-zinc-800 dark:text-zinc-200 mb-4">${clientHtml}</div>
+      ${s ? `
+      <textarea id="rp-input" rows="4" placeholder="Tvoja odpoveď klientovi… (píš ako skutočnému klientovi — konkrétne kroky, dáta, realistické očakávania)"
+        class="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-transparent p-3 text-sm outline-none focus:border-indigo-500 mb-3"></textarea>
+      <button onclick="Roleplay.send()" class="btn-press w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">Odpovedať klientovi</button>`
+      : `<button onclick="App.closeModal();App.render()" class="btn-press w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">Zavrieť</button>`}
+    `, true);
+    if (window.lucide) lucide.createIcons();
+  },
+  send() {
+    const text = document.getElementById('rp-input').value.trim();
+    if (text.length < 20) { App.toast('✍️ Napíš plnohodnotnú odpoveď', 'aspoň pár viet', ''); return; }
+    const ev = this.evaluate(text);
+    const fb = ev.badPromise
+      ? '🔴 <b>Pozor:</b> nereálne sľuby (garancie, prvé miesto…) sú červená vlajka — profesionál ich nikdy nedáva.'
+      : ev.roundScore >= 3 ? '🟢 <b>Dobrá odpoveď:</b> trafil si témy klienta a držíš realistické očakávania.'
+      : ev.expertHits === 0 ? '🟠 <b>Príliš všeobecné:</b> odpoveď sa dala povedať hocikomu — klient potrebuje počuť riešenie svojho problému.'
+      : '🟡 <b>Čiastočne:</b> smer dobrý, pridaj konkrétny postup a dáta.';
+    this.session.round++;
+    if (this.session.round > this.session.maxRounds) {
+      this.renderChat(this.finish(), fb);
+    } else {
+      this.renderChat(`<i>${this.reply(ev)}</i>`, fb);
+    }
+  },
+};
+
+/* ═══════════════ MASTER MODE ENGINE ═══════════════ */
+const Master = {
+  unlocked() { return DATA.modules.every(m => App.moduleProgress(m.id) >= 100); },
+  stateFor(cid) {
+    if (!App.state.master[cid]) App.state.master[cid] = { step: 0, score: 0, events: App.sample(DATA.masterEvents, 5).map(e => DATA.masterEvents.indexOf(e)), done: false, log: [] };
+    return App.state.master[cid];
+  },
+  open(cid) {
+    const c = DATA.clients.find(x => x.id === cid);
+    const st = this.stateFor(cid);
+    if (st.done) { this.finalReport(cid); return; }
+    if (st.step === 0) {
+      App.modal(`
+        <h3 class="font-bold text-lg text-zinc-900 dark:text-white mb-1">👑 Master projekt: ${c.name}</h3>
+        <p class="text-xs text-zinc-500 mb-3">${c.industry} · ${c.city} · rozpočet ${c.budget} €/mes. · konkurencia: ${c.competition}</p>
+        <div class="rounded-xl bg-zinc-100 dark:bg-zinc-800/70 p-3 text-sm mb-3">
+          <b>Brief:</b> ${c.history} Problémy: ${c.problems.map(p => DATA.problemLib[p].txt).join(', ')}. Cieľ: ${c.goal}.
+          Stav webu: ${{ ok: 'v poriadku', bad: 'zastaraný', none: 'žiadny' }[c.web]} · GBP: ${{ none: 'neexistuje', unclaimed: 'neprevzatý', weak: 'slabý', good: 'dobrý' }[c.gbp]}.
+        </div>
+        <p class="text-sm text-zinc-600 dark:text-zinc-400 mb-4">Spravuješ tohto klienta 5 „týždňov". Každý týždeň príde reálna udalosť a tvoja reakcia rozhodne o výsledku spolupráce.</p>
+        <button onclick="App.closeModal();Master.nextEvent('${cid}')" class="btn-press w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold">Začať týždeň 1 →</button>`, true);
+      st.step = 1; App.save();
+      return;
+    }
+    this.nextEvent(cid);
+  },
+  nextEvent(cid) {
+    const st = this.stateFor(cid);
+    if (st.step > 5) { st.done = true; App.save(); this.finalReport(cid); return; }
+    const ev = DATA.masterEvents[st.events[st.step - 1]];
+    const shuffled = App.sample(ev.opts.map((o, i) => ({ o, i })), ev.opts.length);
+    App.modal(`
+      <div class="text-xs text-zinc-500 mb-2">Týždeň ${st.step}/5 · skóre ${st.score}/${(st.step - 1) * 2}</div>
+      ${Views.progressBar(st.step / 5 * 100, 'from-violet-500 to-fuchsia-500', 'h-1.5')}
+      <h3 class="font-bold text-zinc-900 dark:text-white my-4">${ev.txt}</h3>
+      <div class="space-y-2">
+        ${shuffled.map(({ o, i }) => `
+        <button onclick="Master.choose('${cid}',${st.events[st.step - 1]},${i})" class="btn-press w-full text-left px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:border-violet-500 text-sm transition">${o[0]}</button>`).join('')}
+      </div>`, true);
+  },
+  choose(cid, evIdx, optIdx) {
+    const st = this.stateFor(cid);
+    const opt = DATA.masterEvents[evIdx].opts[optIdx];
+    st.score += opt[1];
+    st.log.push({ ev: evIdx, opt: optIdx, pts: opt[1] });
+    st.step++;
+    App.save();
+    App.modal(`
+      <div class="text-center mb-3 text-3xl">${opt[1] === 2 ? '✅' : opt[1] === 1 ? '🟡' : '❌'}</div>
+      <div class="font-bold text-center text-zinc-900 dark:text-white mb-2">${opt[1] === 2 ? 'Výborná reakcia! (+2)' : opt[1] === 1 ? 'Čiastočne správne (+1)' : 'Zlá reakcia (0)'}</div>
+      <p class="text-sm text-zinc-600 dark:text-zinc-400 rounded-xl bg-zinc-100 dark:bg-zinc-800/70 p-3 mb-4">${opt[2]}</p>
+      <button onclick="App.closeModal();Master.nextEvent('${cid}')" class="btn-press w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold">${st.step > 5 ? 'Záverečné hodnotenie →' : 'Pokračovať na týždeň ' + st.step + ' →'}</button>`, true);
+  },
+  finalReport(cid) {
+    const c = DATA.clients.find(x => x.id === cid);
+    const st = this.stateFor(cid);
+    const pct = Math.round(st.score / 10 * 100);
+    const grade = pct >= 85 ? ['A', '#10b981', 'Klient predlžuje zmluvu a odporúča ťa ďalej. Toto je senior výkon.'] : pct >= 65 ? ['B', '#3b82f6', 'Spolupráca pokračuje — pár rozhodnutí by senior spravil inak.'] : pct >= 45 ? ['C', '#f59e0b', 'Klient zostáva, ale dôvera je naštrbená. Pozri si vysvetlenia udalostí.'] : ['D', '#ef4444', 'Klient odchádza. Prejdi si teóriu k udalostiam a skús projekt znova.'];
+    if (!st.rewarded) { st.rewarded = true; App.save(); App.addXP(100 + st.score * 15, `Master projekt: ${c.name}`); }
+    App.modal(`
+      <div class="text-center mb-4">
+        <div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl font-extrabold text-white mb-2" style="background:${grade[1]}">${grade[0]}</div>
+        <h3 class="font-bold text-lg text-zinc-900 dark:text-white">${c.name} — záverečné hodnotenie</h3>
+        <div class="text-sm text-zinc-500">${st.score}/10 bodov (${pct} %)</div>
+        <p class="text-sm text-zinc-600 dark:text-zinc-400 mt-2">${grade[2]}</p>
+      </div>
+      <div class="space-y-1.5 mb-4 text-xs">
+        ${st.log.map(l => { const e = DATA.masterEvents[l.ev]; return `<div class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-2.5">
+          <div class="flex gap-2"><span>${l.pts === 2 ? '✅' : l.pts === 1 ? '🟡' : '❌'}</span><span class="flex-1 text-zinc-700 dark:text-zinc-300">${e.txt}</span></div>
+        </div>`; }).join('')}
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button onclick="delete App.state.master['${cid}'];App.save();App.closeModal();Master.open('${cid}')" class="btn-press py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 text-sm font-semibold">↻ Skúsiť znova</button>
+        <button onclick="App.closeModal();App.render()" class="btn-press py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold">Zavrieť</button>
+      </div>`, true);
+  },
+};
+
+/* ═══════════════ VIEW: AGENTÚRA ═══════════════ */
+Views.agency = function () {
+  const unlocked = Master.unlocked();
+  const masterClients = DATA.clients.filter(c => c.master);
+  const doneMaster = masterClients.filter(c => (App.state.master[c.id] || {}).done).length;
+  return `
+  <div class="rounded-2xl border-2 ${unlocked ? 'border-violet-500/40 bg-violet-500/5' : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#131316]'} p-5 mb-4">
+    <div class="flex flex-wrap items-center gap-4">
+      <div class="text-3xl">🏢</div>
+      <div class="flex-1 min-w-[220px]">
+        <h2 class="font-extrabold text-lg text-zinc-900 dark:text-white">Tvoja agentúra</h2>
+        <p class="text-xs text-zinc-500">Roleplay rozhovory s klientmi sú dostupné hneď — trénuj komunikáciu. Master projekty (👑) sa odomknú dokončením všetkých modulov.</p>
+      </div>
+      <div class="text-right">
+        <div class="text-xl font-extrabold text-violet-400">${doneMaster}/20</div>
+        <div class="text-[10px] text-zinc-500">master projektov</div>
+        <div class="text-xs mt-1 ${unlocked ? 'text-emerald-500 font-bold' : 'text-zinc-500'}">${unlocked ? '👑 Master Mode odomknutý' : '🔒 Master Mode zamknutý'}</div>
+      </div>
+    </div>
+  </div>
+  <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    ${DATA.clients.map(c => {
+      const mst = App.state.master[c.id];
+      const persona = { friendly: '🙂 priateľský', skeptical: '🤨 skeptický', impatient: '⏱ netrpezlivý', analytical: '📊 analytický', chaotic: '🌪 chaotický' }[c.personality];
+      return `<div class="card-hover rounded-2xl border ${mst?.done ? 'border-violet-500/40' : 'border-zinc-200 dark:border-zinc-800'} bg-white dark:bg-[#131316] p-4">
+        <div class="flex items-start justify-between mb-1">
+          <h3 class="font-bold text-sm text-zinc-900 dark:text-white">${c.master ? '👑 ' : ''}${c.name}</h3>
+          <span class="text-[10px] text-zinc-500 shrink-0">${c.budget} €/m</span>
+        </div>
+        <div class="text-xs text-zinc-500 mb-2">${c.industry} · ${c.city} · ${persona}</div>
+        <div class="text-[11px] text-zinc-600 dark:text-zinc-400 mb-3">${c.problems.map(p => '• ' + DATA.problemLib[p].txt).join('<br>')}</div>
+        <div class="flex gap-2">
+          <button onclick="Roleplay.start('${c.id}')" class="btn-press flex-1 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold">💬 Rozhovor</button>
+          ${c.master ? `<button onclick="${Master.unlocked() ? `Master.open('${c.id}')` : `App.toast('🔒 Master Mode','Dokonči všetky 3 moduly','')`}" class="btn-press flex-1 py-1.5 rounded-lg text-[11px] font-semibold ${Master.unlocked() ? 'bg-violet-600 hover:bg-violet-500 text-white' : 'border border-zinc-300 dark:border-zinc-700 text-zinc-500'}">${mst?.done ? '📋 Hodnotenie' : '👑 Projekt'}</button>` : ''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+};
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   INTERVIEW MODE — AI recruiter vedie technický pohovor
+   ───────────────────────────────────────────────────────────────────
+   3 tracky (PPC / SEO / Full-stack). Recruiter kladie otázky,
+   odpovedáš vlastnými slovami, engine hodnotí pokrytie kľúčových
+   bodov, ukáže vzorovú odpoveď a na konci dá verdikt + odporúčania.
+   S API kľúčom mentora sa dá odpoveď dodatočne konzultovať.
+   ═══════════════════════════════════════════════════════════════════ */
+
+DATA.interviewTracks = [
+  { id: 'ppc', name: 'PPC Specialist (Google Ads)', icon: '📣', role: 'Junior/Medior PPC pozícia v agentúre',
+    questions: [
+      { q: 'Vysvetlite, ako funguje aukcia Google Ads a čo je Ad Rank.', kw: ['bid', 'quality', 'kvalit', 'ad rank', 'aukci', 'druh'], model: 'Pri každom vyhľadávaní prebieha aukcia. O poradí rozhoduje Ad Rank ≈ max CPC bid × Quality Score + očakávaný vplyv assets. Nevyhráva najvyšší bid — kvalitná reklama platí menej za lepšiu pozíciu. Reálne platíte len toľko, koľko treba na prekonanie inzerenta pod vami.' },
+      { q: 'Klient má e-shop s maržou 30 %. Aký ROAS cieľ mu nastavíte a prečo?', kw: ['break', '333', 'marž', 'roas', 'zisk', '1/0,3'], model: 'Break-even ROAS = 1/marža = 1/0,30 ≈ 333 %. Všetko nad to tvorí zisk. Cieľový tROAS nastavím nad break-even s ohľadom na cieľ: agresívny rast → bližšie k 350–400 %, maximalizácia zisku → vyššie. Zároveň upozorním, že maximalizácia ROAS ≠ maximalizácia zisku.' },
+      { q: 'Prevzali ste účet, kde sa 30 % rozpočtu míňa na irelevantné dopyty. Aký je váš postup?', kw: ['search terms', 'negatív', 'match', 'exact', 'phrase', 'zoznam'], model: 'Analýza search terms reportu → identifikácia irelevantných vzorcov → negatívne kľúčové slová (vrátane synoným a tvarov), zdieľaný negatívny zoznam, prehodnotenie match types (broad len so smart biddingom), a týždenná rutina čistenia. Konvertujúce dopyty naopak povýšim na exact.' },
+      { q: 'Kedy nasadíte Performance Max a aké sú jeho riziká?', kw: ['feed', 'meranie', 'brand', 'exclusion', 'doplnok', 'search'], model: 'PMax nasadzujem, keď funguje konverzné meranie, existujú kvalitné assets/feed a je vybudovaný Search základ. Riziká: čierna skrinka, pripisovanie brand konverzií (riešim brand exclusions) a závislosť od kvality konverzných dát. PMax je doplnok Search, nie náhrada.' },
+      { q: 'Konverzie klienta zo dňa na deň klesli na nulu, útrata beží. Čo robíte?', kw: ['meranie', 'tag', 'test', 'web', 'formulár', 'technik'], model: 'Náhla nula pri bežnej útrate = takmer vždy rozbité meranie, nie trh. Overím konverzný tag (Tag Assistant/GTM preview), funkčnosť webu a formulárov, potom nedávne zmeny (release, consent lišta). Až po vylúčení techniky riešim trh a kampane.' },
+      { q: 'Ako vysvetlíte klientovi rozdiel medzi CPA 20 € pri 10 konverziách a CPA 35 € pri 60 konverziách?', kw: ['objem', 'zisk', 'škál', 'marginal', 'absolút', 'celkov'], model: 'Nižšie CPA neznamená lepší biznis. 10×20 € = malý objem; 60 konverzií pri 35 € môže znamenať násobne vyšší celkový zisk, ak je CPA pod hranicou rentability. Škálovanie prirodzene zvyšuje marginálne CPA — optimalizujeme celkový zisk, nie pomerové číslo.' },
+      { q: 'Aké kroky spravíte pred spustením kampaní pre úplne nového klienta?', kw: ['discovery', 'marž', 'meranie', 'keyword', 'research', 'cieľ', 'landing'], model: 'Discovery (biznis, marža, hodnota zákazníka → výpočet cieľového CPA/ROAS), keyword research a konkurenčná analýza, nasadenie a otestovanie konverzného merania + Consent Mode, review landing pages, návrh štruktúry (brand/non-brand), nastavenie očakávaní na prvé 3 mesiace.' },
+      { q: 'Čo je Quality Score, z čoho sa skladá a ako ho zlepšíte?', kw: ['ctr', 'relevan', 'landing', 'komponent', 'tesn'], model: 'Diagnostické skóre 1–10 z troch komponentov: expected CTR, ad relevance, landing page experience. Zlepšenie podľa slabého komponentu: silnejšie reklamy a presnejšie cielenie (CTR), tesnejšie ad groups s kľúčovým slovom v nadpisoch (relevance), dedikované rýchle landing pages (LP experience).' },
+    ]},
+  { id: 'seo', name: 'SEO / Technical Specialist', icon: '🔍', role: 'SEO pozícia so zameraním na technické SEO',
+    questions: [
+      { q: 'Vysvetlite rozdiel medzi crawlingom a indexáciou — a ako do toho vstupuje robots.txt a noindex.', kw: ['crawl', 'index', 'robots', 'noindex', 'blokovan'], model: 'Crawling = sťahovanie stránok Googlebotom; indexácia = zaradenie do indexu. robots.txt riadi crawling (nie indexáciu!) — blokovaná URL sa môže indexovať „naslepo". Na de-indexáciu slúži noindex, pričom stránka nesmie byť blokovaná v robots.txt, inak Google noindex neuvidí.' },
+      { q: 'Web po redizajne stratil 40 % organiky. Ako postupujete?', kw: ['redirect', '301', 'mapa', 'url', 'gsc', 'canonical', 'noindex'], model: 'Korelácia s nasadením = hľadám technickú regresiu: zmeny URL bez 301 redirect mapy, zabudnutý noindex z testu, rozbité canonicaly, robots.txt. V GSC kontrolujem Page indexing trendy a 404. Náprava: redirect mapa 1:1, oprava tagov, validácia opráv a monitoring.' },
+      { q: 'Čo je „Crawled — currently not indexed" a ako to riešite?', kw: ['kvalit', 'intern', 'odkaz', 'obsah', 'thin', 'duplicit'], model: 'Google stránku stiahol, ale nepovažuje ju za dosť hodnotnú na indexáciu. Riešenie nie je Request indexing dokola, ale zlepšenie kvality a unikátnosti obsahu, interné prelinkovanie z autoritatívnych stránok a konsolidácia duplicít.' },
+      { q: 'Vymenujte Core Web Vitals, ich prahové hodnoty a po jednej príčine zlyhania.', kw: ['lcp', 'inp', 'cls', '2,5', '200', '0,1'], model: 'LCP ≤ 2,5 s (pomalé hero obrázky/server), INP ≤ 200 ms (ťažký JavaScript), CLS ≤ 0,1 (obrázky bez rozmerov, naskakujúce bannery). Hodnotí sa na 75. percentile field dát (CrUX) za 28 dní — oprava sa v GSC prejaví až po týždňoch.' },
+      { q: 'Kedy použijete canonical a kedy 301 redirect?', kw: ['canonical', '301', 'dostupn', 'duplicit', 'hint', 'trval'], model: 'Canonical: obe verzie majú zostať dostupné používateľom (parametre, varianty) — je to hint pre vyhľadávač. 301: URL má natrvalo zaniknúť v prospech inej — fyzicky presmeruje a prenáša signály. Pri migráciách vždy 301, pri variantoch canonical.' },
+      { q: 'Klient sa pýta: „Dostali sme penalizáciu?" — ako to zistíte?', kw: ['manual', 'action', 'gsc', 'algoritm', 'core update', 'správa'], model: 'Manual action = správa v GSC reporte Manual actions — vtedy náprava + reconsideration request. Prázdny report + prepad pri známom core update = algoritmické prehodnotenie, žiadna žiadosť neexistuje — rieši sa kvalitou obsahu a webu. Rozlíšenie týchto dvoch situácií je kľúčové.' },
+      { q: 'Ako spravíte technický audit webu — aké oblasti pokryjete?', kw: ['index', 'architekt', 'duplicit', 'cwv', 'odkaz', 'robots', 'priorit'], model: '8 oblastí: indexácia a crawling (robots, sitemap, coverage), architektúra a interné odkazy, duplicity a kanonizácia, obsah, CWV a mobilita, odkazový profil, bezpečnosť a penalizácie. Výstup: nálezy s dôkazmi, prioritizácia dopad × náročnosť, plán 30/60/90 dní.' },
+      { q: 'Prečo môže mať stránka vysoké impresie a nízke CTR — a čo s tým?', kw: ['title', 'description', 'pozíci', 'snippet', 'benchmark', 'rich'], model: 'Buď nízka pozícia, alebo slabý snippet. Porovnám CTR s benchmarkom pre danú pozíciu; ak zaostáva, prepíšem title (dopyt + benefit + rok) a description (CTA), zvážim štruktúrované dáta pre rich results. Meriam pred/po na rovnakých dopytoch.' },
+    ]},
+  { id: 'full', name: 'Digital Specialist (GBP + SEO + Ads)', icon: '🎯', role: 'Full-stack digital pozícia / freelancer pre SME klientov',
+    questions: [
+      { q: 'Lokálna firma má 200 € mesačne na marketing. Kam ich investujete a prečo?', kw: ['gbp', 'profil', 'recenz', 'zadarmo', 'organ', 'search'], model: 'Najprv bezplatné kanály s najvyššou návratnosťou: kompletná optimalizácia GBP profilu + systém recenzií (najsilnejší lokálny kanál, zadarmo). Zvyšok do malej Search kampane na dopyty s najvyšším intentom. Display/social pri tomto rozpočte nemá zmysel.' },
+      { q: 'Vysvetlite tri piliere lokálneho rankingu a ako ich ovplyvníte.', kw: ['relevance', 'distance', 'prominence', 'kategó', 'recenz', 'citáci'], model: 'Relevance (kategórie, kompletnosť profilu, obsah webu), Distance (neovplyvním — riadi realita polohy), Prominence (recenzie, citácie, autorita webu, PR). Prakticky: správna primárna kategória + systém recenzií + konzistentné NAP + lokálne landing pages.' },
+      { q: 'Klient chce „byť prvý na Google". Ako s ním vediete rozhovor?', kw: ['očakáv', 'dopyt', 'cieľ', 'biznis', 'konkrét', 'metrik'], model: 'Preformulujem cieľ z pozície na biznis výsledok: „prvý na čo, pre koho a čo to prinesie?" Vysvetlím rozdiel SEO/Ads/lokálne výsledky, reálne časové rámce a navrhnem merateľné KPI (dopyty, hovory, objednávky). Sľubovanie pozícií je červená vlajka neprofesionála.' },
+      { q: 'Aká je synergia medzi GBP a Google Ads pre lokálnu firmu?', kw: ['location', 'asset', 'prepoj', 'call', 'lokáln', 'maps'], model: 'Prepojenie GBP ↔ Ads odomyká location assets (adresa, hodnotenie, vzdialenosť pri reklame) a reklamy na Maps. Call assets + call konverzie merajú hovory. Organický profil zvyšuje dôveru pri brandovom overovaní po kliku na reklamu — kanály sa násobia, nie sčítavajú.' },
+      { q: 'Firma dostala vlnu falošných 1★ recenzií od konkurencie. Postup?', kw: ['nahlás', 'konflikt', 'odpove', 'redressal', 'dôkaz', 'reviews management'], model: 'Recenzie od konkurencie = konflikt záujmov → nahlásiť (profil + Reviews Management Tool), doložiť vzorec (časová vlna, žiadni reálni zákazníci). Súbežne verejne profesionálne odpovedať pre budúcich zákazníkov a posilniť prísun reálnych recenzií, ktoré vlnu rozriedia.' },
+      { q: 'Ako by ste merali úspešnosť GBP profilu a reportovali ju klientovi?', kw: ['interakc', 'volan', 'tras', 'utm', 'discovery', 'vanity'], model: 'Interakcie > zobrazenia: hovory, žiadosti o trasu, kliky na web (s UTM do GA4), rezervácie. Pomer discovery vs. brand dopytov ukazuje získavanie nových zákazníkov. Mesačný report: viditeľnosť, akcie, recenzie (počet/priemer/response rate) + vykonané práce. Zobrazenia sú vanity metrika.' },
+      { q: 'Klient má web, GBP aj kampane — všetko priemerné. Kde začnete a prečo?', kw: ['audit', 'quick win', 'dopad', 'priorit', 'meranie', 'dáta'], model: 'Trojitý audit (GBP, web/GSC, Ads) → matica dopad × náročnosť → quick wins najprv (typicky: meranie konverzií, GBP kategórie a recenzie, negatívne slová). Bez auditu nezačínam nič „vylepšovať" — priority musia vychádzať z dát, nie dojmov.' },
+      { q: 'Ako si udržiavate odbornosť v rýchlo sa meniacom Google ekosystéme?', kw: ['blog', 'test', 'komunita', 'oficiál', 'experiment', 'zdroje'], model: 'Oficiálne zdroje (Google Ads & Search Central blogy, release notes), overené komunity a newslettre, a hlavne vlastné experimenty na účtoch — zmeny najprv testujem, potom škálujem. Certifikácie obnovujem ročne; kľúčová je prax, nie teória.' },
+    ]},
+];
+
+const Interview = {
+  session: null, // { track, idx, scores[], answers[] }
+  start(trackId) {
+    const track = DATA.interviewTracks.find(t => t.id === trackId);
+    this.session = { track, idx: 0, scores: [], answers: [] };
+    this.renderQ();
+  },
+  renderQ(feedback) {
+    const s = this.session;
+    if (s.idx >= s.track.questions.length) { this.finish(); return; }
+    const q = s.track.questions[s.idx];
+    App.modal(`
+      <div class="flex items-center justify-between mb-3">
+        <div><h3 class="font-bold text-zinc-900 dark:text-white">🎙️ Pohovor: ${s.track.name}</h3>
+        <div class="text-xs text-zinc-500">Otázka ${s.idx + 1}/${s.track.questions.length}</div></div>
+        <button onclick="Interview.session=null;App.closeModal()" class="text-zinc-400 hover:text-red-400"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      ${Views.progressBar((s.idx + 1) / s.track.questions.length * 100, 'from-sky-500 to-cyan-400', 'h-1.5')}
+      ${feedback || ''}
+      <div class="rounded-2xl bg-zinc-100 dark:bg-zinc-800/70 p-4 text-sm text-zinc-800 dark:text-zinc-200 my-4">
+        <b>Recruiter:</b> „${q.q}"
+      </div>
+      <textarea id="iv-input" rows="5" placeholder="Odpovedz ako na skutočnom pohovore — štruktúrovane, s konkrétnymi pojmami a príkladmi…"
+        class="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-transparent p-3 text-sm outline-none focus:border-sky-500 mb-3"></textarea>
+      <button onclick="Interview.answer()" class="btn-press w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold">Odpovedať</button>
+    `, true);
+    if (window.lucide) lucide.createIcons();
+  },
+  answer() {
+    const s = this.session;
+    const text = (document.getElementById('iv-input').value || '').trim();
+    if (text.length < 30) { App.toast('✍️ Rozveď odpoveď', 'na pohovore jednoslovná odpoveď neobstojí', ''); return; }
+    const q = s.track.questions[s.idx];
+    const t = text.toLowerCase();
+    const hits = q.kw.filter(k => t.includes(k)).length;
+    const score = Math.min(100, Math.round(hits / Math.min(4, q.kw.length) * 70) + (text.length > 200 ? 30 : text.length > 100 ? 20 : 10));
+    s.scores.push(score);
+    s.answers.push(text);
+    const fb = `
+      <div class="rounded-xl border ${score >= 70 ? 'border-emerald-500/30 bg-emerald-500/5' : score >= 40 ? 'border-amber-500/30 bg-amber-500/5' : 'border-red-500/30 bg-red-500/5'} p-3 mt-3 text-xs">
+        <div class="font-bold mb-1 ${score >= 70 ? 'text-emerald-500' : score >= 40 ? 'text-amber-500' : 'text-red-400'}">
+          ${score >= 70 ? '✅ Silná odpoveď' : score >= 40 ? '🟡 Priemerná odpoveď' : '🔴 Slabá odpoveď'} (${score}/100) — pokryl si ${hits}/${q.kw.length} kľúčových bodov
+        </div>
+        <div class="text-zinc-600 dark:text-zinc-400"><b>Vzorová odpoveď seniora:</b> ${q.model}</div>
+      </div>`;
+    s.idx++;
+    this.renderQ(fb);
+  },
+  finish() {
+    const s = this.session;
+    const avg = Math.round(s.scores.reduce((a, b) => a + b, 0) / s.scores.length);
+    const verdict = avg >= 75 ? ['🏆 Odporúčanie: PRIJAŤ', 'Odpovedal si na úrovni skúseného špecialistu. S portfóliom projektov z tejto akadémie máš na pohovore silnú pozíciu.', '#10b981']
+      : avg >= 50 ? ['🤝 Odporúčanie: DRUHÉ KOLO', 'Základy máš, chýba hĺbka v niektorých témach. Prejdi si vzorové odpovede a zopakuj slabšie oblasti.', '#f59e0b']
+      : ['📚 Odporúčanie: EŠTE TRÉNOVAŤ', 'Na reálny pohovor je priskoro — vráť sa k modulom, ktoré pokrývajú otázky s najnižším skóre.', '#ef4444'];
+    App.state.interviews.push({ track: s.track.id, avg, date: Date.now() });
+    App.save();
+    App.addXP(40 + Math.round(avg / 2), 'Interview Mode');
+    const weakest = s.track.questions.map((q, i) => ({ q: q.q, sc: s.scores[i] })).sort((a, b) => a.sc - b.sc).slice(0, 3);
+    App.modal(`
+      <div class="text-center mb-4">
+        <div class="text-4xl mb-2">🎙️</div>
+        <h3 class="font-bold text-lg text-zinc-900 dark:text-white">Pohovor dokončený — ${avg}/100</h3>
+        <div class="font-bold mt-1" style="color:${verdict[2]}">${verdict[0]}</div>
+        <p class="text-sm text-zinc-500 mt-1">${verdict[1]}</p>
+      </div>
+      <h4 class="font-bold text-sm mb-2">Skóre po otázkach</h4>
+      <div class="space-y-1 mb-4">${s.scores.map((sc, i) => `
+        <div class="flex items-center gap-2 text-xs"><span class="w-6 text-zinc-500">${i + 1}.</span>
+        <div class="flex-1 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden"><div class="h-full rounded-full" style="background:${sc >= 70 ? '#10b981' : sc >= 40 ? '#f59e0b' : '#ef4444'};width:${sc}%"></div></div>
+        <b class="w-8 text-right">${sc}</b></div>`).join('')}</div>
+      <div class="rounded-xl bg-sky-500/10 border border-sky-500/20 p-3 text-xs mb-4">
+        <b class="text-sky-400">Na zlepšenie:</b>
+        <ul class="mt-1 space-y-0.5 text-zinc-600 dark:text-zinc-400">${weakest.map(w => `<li>• ${w.q} <b>(${w.sc}/100)</b></li>`).join('')}</ul>
+      </div>
+      <button onclick="Interview.session=null;App.closeModal();App.render()" class="btn-press w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold">Zavrieť</button>
+    `, true);
+    this.session = null;
+  },
+};
+
+/* ═══════════════ VIEW: POHOVOR ═══════════════ */
+Views.interview = function () {
+  const hist = App.state.interviews || [];
+  return `
+  <p class="text-sm text-zinc-500 mb-4">🎙️ AI recruiter s tebou povedie technický pohovor — 8 otázok, odpovedáš vlastnými slovami, po každej odpovedi vidíš vzorovú odpoveď seniora. Na konci dostaneš verdikt ako z reálneho výberového konania.</p>
+  <div class="grid md:grid-cols-3 gap-4">
+    ${DATA.interviewTracks.map(t => {
+      const best = hist.filter(h => h.track === t.id).sort((a, b) => b.avg - a.avg)[0];
+      return `<div class="card-hover rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#131316] p-5 flex flex-col">
+        <div class="text-3xl mb-2">${t.icon}</div>
+        <h3 class="font-bold text-zinc-900 dark:text-white">${t.name}</h3>
+        <p class="text-xs text-zinc-500 mt-1 mb-3 flex-1">${t.role} · ${t.questions.length} otázok</p>
+        ${best ? `<div class="text-xs mb-2">Najlepší výsledok: <b style="color:${best.avg >= 75 ? '#10b981' : '#f59e0b'}">${best.avg}/100</b></div>` : ''}
+        <button onclick="Interview.start('${t.id}')" class="btn-press w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold">Začať pohovor</button>
+      </div>`;
+    }).join('')}
+  </div>
+  ${hist.length ? `<div class="mt-4">${this.card(`
+    <h3 class="font-bold text-sm text-zinc-900 dark:text-white mb-2">História pohovorov</h3>
+    <div class="space-y-1">${[...hist].reverse().slice(0, 8).map(h => {
+      const t = DATA.interviewTracks.find(x => x.id === h.track);
+      return `<div class="flex items-center gap-3 text-sm py-1.5 border-b border-zinc-100 dark:border-zinc-800/60 last:border-0">
+        <span>${t.icon}</span><span class="flex-1">${t.name}</span>
+        <span class="text-xs text-zinc-500">${new Date(h.date).toLocaleDateString('sk')}</span>
+        <b class="text-xs" style="color:${h.avg >= 75 ? '#10b981' : h.avg >= 50 ? '#f59e0b' : '#ef4444'}">${h.avg}/100</b></div>`;
+    }).join('')}</div>`)}</div>` : ''}`;
 };
 </script>
 
