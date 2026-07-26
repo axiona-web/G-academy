@@ -37,8 +37,13 @@ src/05-06_data_ads    – dáta modulu Google Ads (2 časti)
 src/07_data_misc.js   – certifikácie, projekty, slovník, flashcards, kariéra, achievementy, scenáre mentora
 src/08_app_core.js    – App: stav, localStorage, router, gamifikácia, quiz engine, SM-2
 src/09-11_views       – Views: všetky obrazovky + Chart.js grafy + AI mentor
+src/12_auth.js        – Auth: registrácia/prihlásenie (Supabase), cloud sync, admin sekcia
 ```
 
-Zloženie po úprave komponentov: `cat src/01* src/02* src/03* src/04* src/05* src/06* src/07* src/08* src/09* src/10* src/11* > index.html`
+Zloženie po úprave komponentov: `cat src/01* src/02* src/03* src/04* src/05* src/06* src/07* src/08* src/09* src/10* src/11* src/12* > index.html`
+
+## Nasadenie na web
+
+Kompletný návod (GitHub Pages + Supabase registrácia, admin rola, budúce platené bloky) je v súbore **NAVOD.md**. Konfigurácia kľúčov: `config.js`. Databázový setup: `supabase-setup.sql`.
 
 Technológie: HTML5, Tailwind CSS (CDN), vanilla JS, Chart.js, Lucide Icons, localStorage, PWA (manifest + service worker), dark/light mode.
