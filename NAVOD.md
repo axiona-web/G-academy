@@ -118,6 +118,8 @@ update public.profiles set role = 'admin' where email = 'mdominik01@gmail.com';
 ### D1. Databáza pre editor obsahu, logy a AI limity
 1. Supabase → **SQL Editor** → **New query** → vlož celý obsah súboru **`supabase-setup-2.sql`** → **Run**.
 2. Tým sa aktivuje: admin editor obsahu (upravuješ lekcie/otázky priamo v aplikácii v sekcii Admin), logovanie chýb a limity AI.
+3. Rovnako spusti aj **`supabase-setup-3.sql`** — zapne produktovú analytiku (eventy učenia, úspešnosť otázok, retencia) pre admin dashboard.
+4. Pred verejným spustením si prečítaj **`SECURITY.md`** — súhrn bezpečnostného auditu a odporúčané kroky.
 
 ### D2. Zabezpečená AI proxy (odporúčané pre verejný web)
 Vďaka nej môžu AI mentora používať všetci prihlásení študenti — tvoj API kľúč pritom **nikdy neopustí server**:
