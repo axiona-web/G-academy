@@ -165,7 +165,14 @@ const App = {
     { id: 'stats', name: 'Štatistiky', icon: 'bar-chart-3' },
     { id: 'mentor', name: 'AI Mentor', icon: 'bot' },
   ],
-  MOBILE_NAV: ['dashboard', 'modules', 'tests', 'mentor', 'stats'],
+  MOBILE_NAV: ['dashboard', 'modules', 'tests', 'mentor'],
+  /* Skupiny navigácie pre desktop sidebar (prehľadnosť pri 14+ položkách) */
+  NAV_GROUPS: [
+    ['Učenie', ['dashboard', 'skilltree', 'modules', 'tests', 'flashcards']],
+    ['Prax', ['projects', 'auditor', 'agency', 'interview']],
+    ['Rozvoj', ['certs', 'glossary', 'career', 'stats']],
+    ['AI', ['mentor']],
+  ],
   current: { view: 'dashboard', params: {} },
 
   /* Navigačné položky — Admin sekcia sa pridá len administrátorovi */
@@ -201,15 +208,25 @@ const App = {
   },
   renderNav() {
     const active = this.current.view === 'lesson' || this.current.view === 'module' ? 'modules' : this.current.view;
-    document.getElementById('nav-desktop').innerHTML = this.navItems().map(n => `
+    const items = this.navItems();
+    const btn = n => `
       <button onclick="App.go('${n.id}')" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800/70 ${active === n.id ? 'active font-semibold' : 'text-zinc-600 dark:text-zinc-400'}">
         <i data-lucide="${n.icon}" class="w-4 h-4 shrink-0"></i><span>${n.name}</span>
-      </button>`).join('');
+      </button>`;
+    // Desktop: zoskupené sekcie + Admin na konci (ak existuje)
+    const grouped = this.NAV_GROUPS.map(([label, ids]) => `
+      <div class="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-600">${label}</div>
+      ${ids.map(id => items.find(x => x.id === id)).filter(Boolean).map(btn).join('')}`).join('');
+    const adminItem = items.find(x => x.id === 'admin');
+    document.getElementById('nav-desktop').innerHTML = grouped + (adminItem ? `<div class="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-600">Správa</div>${btn(adminItem)}` : '');
+    // Mobil: 4 hlavné položky + „Viac" so všetkými sekciami
     document.getElementById('nav-mobile').innerHTML = this.MOBILE_NAV.map(id => {
       const n = this.NAV.find(x => x.id === id);
       return `<button onclick="App.go('${n.id}')" class="flex flex-col items-center gap-0.5 px-3 py-1 text-[10px] ${active === id ? 'text-indigo-500 font-semibold' : 'text-zinc-500'}">
         <i data-lucide="${n.icon}" class="w-5 h-5"></i>${n.name}</button>`;
-    }).join('');
+    }).join('') + `
+      <button onclick="App.moreMenu()" class="flex flex-col items-center gap-0.5 px-3 py-1 text-[10px] ${!this.MOBILE_NAV.includes(active) ? 'text-indigo-500 font-semibold' : 'text-zinc-500'}">
+        <i data-lucide="grip" class="w-5 h-5"></i>Viac</button>`;
     // Sidebar footer: level widget
     const lv = this.level();
     const nextXp = lv.next ? lv.next.xp : lv.xp;
@@ -224,6 +241,19 @@ const App = {
   refreshTopbar() {
     document.getElementById('topbar-streak').textContent = `🔥 ${this.state.streak.count}`;
     document.getElementById('topbar-xp').textContent = `⚡ ${this.state.xp} XP`;
+  },
+
+  /* Mobilné menu „Viac" — mriežka všetkých sekcií */
+  moreMenu() {
+    this.modal(`
+      <h3 class="font-bold text-zinc-900 dark:text-white mb-4">Všetky sekcie</h3>
+      <div class="grid grid-cols-3 gap-2">
+        ${this.navItems().map(n => `
+        <button onclick="App.closeModal();App.go('${n.id}')" class="btn-press flex flex-col items-center gap-1.5 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500/50 transition">
+          <i data-lucide="${n.icon}" class="w-5 h-5 text-indigo-400"></i>
+          <span class="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">${n.name}</span>
+        </button>`).join('')}
+      </div>`);
   },
 
   /* ── Modal ── */

@@ -4,11 +4,13 @@
    Poznámka: SW funguje len cez http(s) — pri otvorení cez file://
    sa aplikácia správa normálne, len bez offline cache.
    ═══════════════════════════════════════════════════════════════════ */
-const CACHE = 'gacademy-v5';
+const CACHE = 'gacademy-v6';
 const ASSETS = [
   './index.html',
   './manifest.json',
   './config.js',
+  './icon-192.png',
+  './icon-512.png',
 ];
 
 /* Inštalácia: predcachovanie app shellu */

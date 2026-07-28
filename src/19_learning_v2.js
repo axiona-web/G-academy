@@ -209,6 +209,13 @@ const Cases = {
     this.timer = setInterval(() => {
       const el = document.getElementById('case-timer');
       if (!this.session) { clearInterval(this.timer); return; }
+      // Zavretý modal (klik mimo) počas behu = prerušenie prípadu
+      if (!el && Date.now() - this.session.startedAt > 3000) {
+        Track.log('simulation_abandoned', { kind: 'case', id: this.session.c.id });
+        this.session = null; clearInterval(this.timer);
+        App.toast('⏹ Prípad prerušený', 'môžeš ho spustiť znova', '');
+        return;
+      }
       const left = Math.max(0, Math.round((this.session.endsAt - Date.now()) / 1000));
       if (el) { el.textContent = '⏱ ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0'); el.className = left < 60 ? 'text-sm font-bold text-red-500' : 'text-sm font-bold text-zinc-500'; }
       if (left <= 0) { App.toast('⏱ Čas vypršal!', 'Vyhodnocujem doterajší výber', ''); this.finish(); }

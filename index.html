@@ -15,7 +15,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>G-Academy — Google Marketing Akadémia</title>
 <meta name="description" content="Kompletná príprava na Google Business Profile, Search Console a Google Ads — od základov po expertnú úroveň.">
+<!-- Open Graph — pekný náhľad pri zdieľaní odkazu -->
+<meta property="og:title" content="G-Academy — Google Marketing Akadémia">
+<meta property="og:description" content="Interaktívna príprava na Google Business Profile, Search Console a Google Ads: 70 lekcií, simulovaní klienti, AI mentor, certifikácie. Registrácia zadarmo.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="icon-512.png">
+<meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#09090b">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%236366f1'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>G</text></svg>">
 
@@ -2546,7 +2553,14 @@ const App = {
     { id: 'stats', name: 'Štatistiky', icon: 'bar-chart-3' },
     { id: 'mentor', name: 'AI Mentor', icon: 'bot' },
   ],
-  MOBILE_NAV: ['dashboard', 'modules', 'tests', 'mentor', 'stats'],
+  MOBILE_NAV: ['dashboard', 'modules', 'tests', 'mentor'],
+  /* Skupiny navigácie pre desktop sidebar (prehľadnosť pri 14+ položkách) */
+  NAV_GROUPS: [
+    ['Učenie', ['dashboard', 'skilltree', 'modules', 'tests', 'flashcards']],
+    ['Prax', ['projects', 'auditor', 'agency', 'interview']],
+    ['Rozvoj', ['certs', 'glossary', 'career', 'stats']],
+    ['AI', ['mentor']],
+  ],
   current: { view: 'dashboard', params: {} },
 
   /* Navigačné položky — Admin sekcia sa pridá len administrátorovi */
@@ -2582,15 +2596,25 @@ const App = {
   },
   renderNav() {
     const active = this.current.view === 'lesson' || this.current.view === 'module' ? 'modules' : this.current.view;
-    document.getElementById('nav-desktop').innerHTML = this.navItems().map(n => `
+    const items = this.navItems();
+    const btn = n => `
       <button onclick="App.go('${n.id}')" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800/70 ${active === n.id ? 'active font-semibold' : 'text-zinc-600 dark:text-zinc-400'}">
         <i data-lucide="${n.icon}" class="w-4 h-4 shrink-0"></i><span>${n.name}</span>
-      </button>`).join('');
+      </button>`;
+    // Desktop: zoskupené sekcie + Admin na konci (ak existuje)
+    const grouped = this.NAV_GROUPS.map(([label, ids]) => `
+      <div class="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-600">${label}</div>
+      ${ids.map(id => items.find(x => x.id === id)).filter(Boolean).map(btn).join('')}`).join('');
+    const adminItem = items.find(x => x.id === 'admin');
+    document.getElementById('nav-desktop').innerHTML = grouped + (adminItem ? `<div class="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-600">Správa</div>${btn(adminItem)}` : '');
+    // Mobil: 4 hlavné položky + „Viac" so všetkými sekciami
     document.getElementById('nav-mobile').innerHTML = this.MOBILE_NAV.map(id => {
       const n = this.NAV.find(x => x.id === id);
       return `<button onclick="App.go('${n.id}')" class="flex flex-col items-center gap-0.5 px-3 py-1 text-[10px] ${active === id ? 'text-indigo-500 font-semibold' : 'text-zinc-500'}">
         <i data-lucide="${n.icon}" class="w-5 h-5"></i>${n.name}</button>`;
-    }).join('');
+    }).join('') + `
+      <button onclick="App.moreMenu()" class="flex flex-col items-center gap-0.5 px-3 py-1 text-[10px] ${!this.MOBILE_NAV.includes(active) ? 'text-indigo-500 font-semibold' : 'text-zinc-500'}">
+        <i data-lucide="grip" class="w-5 h-5"></i>Viac</button>`;
     // Sidebar footer: level widget
     const lv = this.level();
     const nextXp = lv.next ? lv.next.xp : lv.xp;
@@ -2605,6 +2629,19 @@ const App = {
   refreshTopbar() {
     document.getElementById('topbar-streak').textContent = `🔥 ${this.state.streak.count}`;
     document.getElementById('topbar-xp').textContent = `⚡ ${this.state.xp} XP`;
+  },
+
+  /* Mobilné menu „Viac" — mriežka všetkých sekcií */
+  moreMenu() {
+    this.modal(`
+      <h3 class="font-bold text-zinc-900 dark:text-white mb-4">Všetky sekcie</h3>
+      <div class="grid grid-cols-3 gap-2">
+        ${this.navItems().map(n => `
+        <button onclick="App.closeModal();App.go('${n.id}')" class="btn-press flex flex-col items-center gap-1.5 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500/50 transition">
+          <i data-lucide="${n.icon}" class="w-5 h-5 text-indigo-400"></i>
+          <span class="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">${n.name}</span>
+        </button>`).join('')}
+      </div>`);
   },
 
   /* ── Modal ── */
@@ -3924,9 +3961,10 @@ const Auth = {
     const { data: { session } } = await this.sb.auth.getSession();
     if (session) await this.onLogin(session.user);
     else this.renderGate();
-    // reaguj na zmeny session (odhlásenie v inom tabe a pod.)
+    // reaguj na zmeny session (odhlásenie v inom tabe, obnova hesla)
     this.sb.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') location.reload();
+      if (event === 'PASSWORD_RECOVERY') this.recoveryForm();
     });
   },
 
@@ -4071,6 +4109,29 @@ const Auth = {
     // Ak je v Supabase zapnuté potvrdenie e-mailu, session ešte nie je aktívna
     if (!data.session) return this.renderGate('login', '✅ Účet vytvorený! Skontroluj e-mail a potvrď registráciu, potom sa prihlás.');
     await this.onLogin(data.user);
+  },
+
+  /* Obrazovka nastavenia nového hesla — otvorí sa po kliknutí na
+     odkaz „obnova hesla" z e-mailu (event PASSWORD_RECOVERY) */
+  recoveryForm() {
+    App.modal(`
+      <h3 class="font-bold text-lg text-zinc-900 dark:text-white mb-2">🔑 Nastav si nové heslo</h3>
+      <p class="text-xs text-zinc-500 mb-4">Prišiel si z odkazu na obnovu hesla — zadaj nové heslo (min. 6 znakov).</p>
+      <input id="rec-pass" type="password" placeholder="Nové heslo" class="w-full mb-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+      <input id="rec-pass2" type="password" placeholder="Nové heslo znova" class="w-full mb-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+      <div id="rec-msg" class="text-xs text-red-400 mb-2"></div>
+      <button onclick="Auth.saveNewPassword()" class="btn-press w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">Uložiť nové heslo</button>`);
+  },
+  async saveNewPassword() {
+    const p1 = document.getElementById('rec-pass').value;
+    const p2 = document.getElementById('rec-pass2').value;
+    const msg = document.getElementById('rec-msg');
+    if (p1.length < 6) { msg.textContent = 'Heslo musí mať aspoň 6 znakov.'; return; }
+    if (p1 !== p2) { msg.textContent = 'Heslá sa nezhodujú.'; return; }
+    const { error } = await this.sb.auth.updateUser({ password: p1 });
+    if (error) { msg.textContent = this.slovak(error.message); return; }
+    App.closeModal();
+    App.toast('✅ Heslo zmenené', 'odteraz sa prihlasuješ novým heslom', '');
   },
 
   async resetPassword() {
@@ -5836,6 +5897,13 @@ const Cases = {
     this.timer = setInterval(() => {
       const el = document.getElementById('case-timer');
       if (!this.session) { clearInterval(this.timer); return; }
+      // Zavretý modal (klik mimo) počas behu = prerušenie prípadu
+      if (!el && Date.now() - this.session.startedAt > 3000) {
+        Track.log('simulation_abandoned', { kind: 'case', id: this.session.c.id });
+        this.session = null; clearInterval(this.timer);
+        App.toast('⏹ Prípad prerušený', 'môžeš ho spustiť znova', '');
+        return;
+      }
       const left = Math.max(0, Math.round((this.session.endsAt - Date.now()) / 1000));
       if (el) { el.textContent = '⏱ ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0'); el.className = left < 60 ? 'text-sm font-bold text-red-500' : 'text-sm font-bold text-zinc-500'; }
       if (left <= 0) { App.toast('⏱ Čas vypršal!', 'Vyhodnocujem doterajší výber', ''); this.finish(); }

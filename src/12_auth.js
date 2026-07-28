@@ -36,9 +36,10 @@ const Auth = {
     const { data: { session } } = await this.sb.auth.getSession();
     if (session) await this.onLogin(session.user);
     else this.renderGate();
-    // reaguj na zmeny session (odhlásenie v inom tabe a pod.)
+    // reaguj na zmeny session (odhlásenie v inom tabe, obnova hesla)
     this.sb.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') location.reload();
+      if (event === 'PASSWORD_RECOVERY') this.recoveryForm();
     });
   },
 
@@ -183,6 +184,29 @@ const Auth = {
     // Ak je v Supabase zapnuté potvrdenie e-mailu, session ešte nie je aktívna
     if (!data.session) return this.renderGate('login', '✅ Účet vytvorený! Skontroluj e-mail a potvrď registráciu, potom sa prihlás.');
     await this.onLogin(data.user);
+  },
+
+  /* Obrazovka nastavenia nového hesla — otvorí sa po kliknutí na
+     odkaz „obnova hesla" z e-mailu (event PASSWORD_RECOVERY) */
+  recoveryForm() {
+    App.modal(`
+      <h3 class="font-bold text-lg text-zinc-900 dark:text-white mb-2">🔑 Nastav si nové heslo</h3>
+      <p class="text-xs text-zinc-500 mb-4">Prišiel si z odkazu na obnovu hesla — zadaj nové heslo (min. 6 znakov).</p>
+      <input id="rec-pass" type="password" placeholder="Nové heslo" class="w-full mb-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+      <input id="rec-pass2" type="password" placeholder="Nové heslo znova" class="w-full mb-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+      <div id="rec-msg" class="text-xs text-red-400 mb-2"></div>
+      <button onclick="Auth.saveNewPassword()" class="btn-press w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">Uložiť nové heslo</button>`);
+  },
+  async saveNewPassword() {
+    const p1 = document.getElementById('rec-pass').value;
+    const p2 = document.getElementById('rec-pass2').value;
+    const msg = document.getElementById('rec-msg');
+    if (p1.length < 6) { msg.textContent = 'Heslo musí mať aspoň 6 znakov.'; return; }
+    if (p1 !== p2) { msg.textContent = 'Heslá sa nezhodujú.'; return; }
+    const { error } = await this.sb.auth.updateUser({ password: p1 });
+    if (error) { msg.textContent = this.slovak(error.message); return; }
+    App.closeModal();
+    App.toast('✅ Heslo zmenené', 'odteraz sa prihlasuješ novým heslom', '');
   },
 
   async resetPassword() {
