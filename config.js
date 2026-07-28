@@ -12,4 +12,13 @@
 window.GACADEMY_CONFIG = {
   SUPABASE_URL: 'https://hbhmatwsoboxlkjbvwhd.supabase.co',       // napr. 'https://abcdefgh.supabase.co'
   SUPABASE_ANON_KEY: 'sb_publishable_LqWOR3svcRwpNGLeUN_XPQ_bUOZ6PGV',  // dlhý reťazec začínajúci 'eyJ…'
+
+  /* ── Google API kľúče pre AI Auditor (rovnaké ako View Sales Suite) ──
+     PSI_API_KEY: PageSpeed Insights — bez kľúča má API prísne limity (429).
+     GOOGLE_MAPS_API_KEY: Places API (New) — automatické vyhľadanie GBP
+     profilu a načítanie dát (hodnotenie, recenzie, fotky, hodiny).
+     Pozor: v Google Cloud Console musia mať kľúče v „Website restrictions"
+     povolenú aj doménu axiona-web.github.io/* */
+  PSI_API_KEY: 'AIzaSyA4ncGTpc08O0idb_ykqhYoF0742_tvu_U',
+  GOOGLE_MAPS_API_KEY: 'AIzaSyAnwJg7hLl05s-usDuSvrcM3nnu90dRczI',
 };

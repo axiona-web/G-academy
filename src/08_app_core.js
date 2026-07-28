@@ -277,6 +277,13 @@ const App = {
   },
   completeLesson(id) {
     if (this.state.completedLessons[id]) return;
+    // Lekciu nemožno dokončiť bez absolvovania mini testu —
+    // klik rovno otvorí test, nech používateľ nemusí hľadať.
+    if (!this.state.quizResults['lesson:' + id]) {
+      this.toast('📝 Najprv mini test', 'Dokonči 5 otázok — potom označíš lekciu', '');
+      this.startQuiz('lesson', id);
+      return;
+    }
     const l = this.getLesson(id);
     this.state.completedLessons[id] = Date.now();
     this.touchStreak();

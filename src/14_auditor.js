@@ -40,8 +40,12 @@ const Auditor = {
   /* ── WEB AUDIT cez PageSpeed Insights API ── */
   async runWebAudit(url) {
     url = this.clean(url);
-    const api = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=' + encodeURIComponent(url) + '&strategy=mobile&category=PERFORMANCE&category=SEO&locale=sk';
+    // S API kľúčom (config.js) má PSI kvótu 25 000 volaní/deň; bez neho
+    // zdieľanú per-IP kvótu, ktorá často končí chybou 429.
+    const psiKey = window.GACADEMY_CONFIG?.PSI_API_KEY || '';
+    const api = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=' + encodeURIComponent(url) + '&strategy=mobile&category=PERFORMANCE&category=SEO&locale=sk' + (psiKey ? '&key=' + psiKey : '');
     const resp = await fetch(api);
+    if (resp.status === 429) throw new Error('PSI API: prekročený limit požiadaviek (429). ' + (psiKey ? 'Skús o minútu.' : 'Doplň PSI_API_KEY do config.js — bez kľúča má Google veľmi prísne limity.'));
     if (!resp.ok) throw new Error('PSI API vrátilo ' + resp.status + ' — skontroluj URL (musí byť verejne dostupná).');
     const d = await resp.json();
     const lh = d.lighthouseResult;
@@ -257,6 +261,7 @@ Views.showAudit = function (i) {
   const sevColor = { critical: '#ef4444', high: '#f97316', med: '#f59e0b', low: '#84cc16' };
   const sevName = { critical: 'Kritické', high: 'Vysoká', med: 'Stredná', low: 'Nízka' };
   const el = document.getElementById('audit-result');
+  if (!el) { App.go('auditor'); return Views.showAudit(i); } // audit dokončený mimo obrazovky Auditor
   el.innerHTML = `
   <div class="rounded-2xl border-2 border-indigo-500/30 bg-white dark:bg-[#131316] p-5 animate-slide-up">
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">

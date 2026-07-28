@@ -254,8 +254,8 @@ const Views = {
         📝 Mini test (5 otázok)${quiz ? ` · najlepšie ${Math.round(quiz.score / quiz.total * 100)} %` : ''}
       </button>
       <button onclick="App.completeLesson('${l.id}')" ${done ? 'disabled' : ''}
-        class="btn-press py-3 rounded-xl font-semibold text-white transition ${done ? 'bg-emerald-600/50 cursor-default' : 'bg-emerald-600 hover:bg-emerald-500'}">
-        ${done ? '✓ Lekcia dokončená' : '✔ Označiť ako dokončené (+' + (l.min * 2) + ' XP)'}
+        class="btn-press py-3 rounded-xl font-semibold transition ${done ? 'bg-emerald-600/50 text-white cursor-default' : quiz ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'border-2 border-zinc-300 dark:border-zinc-700 text-zinc-500'}">
+        ${done ? '✓ Lekcia dokončená' : quiz ? '✔ Označiť ako dokončené (+' + (l.min * 2) + ' XP)' : '🔒 Najprv dokonči mini test'}
       </button>
     </div>
 
