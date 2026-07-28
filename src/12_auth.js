@@ -270,6 +270,13 @@ const Auth = {
       'User already registered': 'Tento e-mail už má účet — skús sa prihlásiť.',
       'Email not confirmed': 'E-mail ešte nie je potvrdený — skontroluj schránku.',
       'Password should be at least 6 characters': 'Heslo musí mať aspoň 6 znakov.',
+      'email rate limit exceeded': 'Momentálne sme odoslali priveľa e-mailov — skús to prosím o hodinu, alebo napíš správcovi.',
+      'over_email_send_rate_limit': 'Momentálne sme odoslali priveľa e-mailov — skús to prosím o hodinu.',
+      'For security purposes': 'Kvôli bezpečnosti počkaj chvíľu pred ďalším pokusom.',
+      'Signups not allowed': 'Registrácie sú dočasne vypnuté — kontaktuj správcu.',
+      'Email signups are disabled': 'Registrácia e-mailom je vypnutá — kontaktuj správcu.',
+      'Unable to validate email address': 'Neplatná adresa e-mailu.',
+      'Failed to fetch': 'Nepodarilo sa spojiť so serverom — skontroluj internetové pripojenie.',
     };
     for (const k in map) if (msg.includes(k)) return map[k];
     return '⚠️ ' + msg;
