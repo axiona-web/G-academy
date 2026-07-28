@@ -115,6 +115,8 @@ const Onboard = {
   test: null,
   maybeShow() {
     if (App.state.onboarding || Object.keys(App.state.completedLessons).length > 3) return;
+    // Neprekrývaj iné otvorené okno (uvítanie po overení, obnova hesla…)
+    if (document.getElementById('modal-root').innerHTML.trim()) { setTimeout(() => this.maybeShow(), 4000); return; }
     this.stepGoal();
   },
   stepGoal() {

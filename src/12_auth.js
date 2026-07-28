@@ -33,9 +33,16 @@ const Auth = {
       App.init(); return;
     }
     this.sb = window.supabase.createClient(GACADEMY_CONFIG.SUPABASE_URL, GACADEMY_CONFIG.SUPABASE_ANON_KEY);
+    const landing = this.readAuthLanding();   // návrat z e-mailového odkazu?
     const { data: { session } } = await this.sb.auth.getSession();
-    if (session) await this.onLogin(session.user);
-    else this.renderGate();
+    if (landing.error) { this.renderGate('login', '⚠️ ' + landing.error); return; }
+    if (session) {
+      await this.onLogin(session.user);
+      if (landing.type === 'signup' || landing.type === 'email_change') this.welcomeVerified();
+      if (landing.type === 'recovery') setTimeout(() => this.recoveryForm(), 500);
+    } else if (landing.type === 'signup') {
+      this.renderGate('login', '✅ E-mail overený! Prihlás sa a môžeme začať.');
+    } else this.renderGate();
     // reaguj na zmeny session (odhlásenie v inom tabe, obnova hesla)
     this.sb.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') location.reload();
@@ -182,8 +189,46 @@ const Auth = {
     const { data, error } = await this.sb.auth.signUp({ email, password: pass, options: { data: { full_name: name } } });
     if (error) return this.renderGate('register', this.slovak(error.message));
     // Ak je v Supabase zapnuté potvrdenie e-mailu, session ešte nie je aktívna
-    if (!data.session) return this.renderGate('login', '✅ Účet vytvorený! Skontroluj e-mail a potvrď registráciu, potom sa prihlás.');
+    if (!data.session) return this.renderGate('login', `✅ Účet vytvorený! Poslali sme ti overovací e-mail na <b>${this.esc(email)}</b> — klikni v ňom na odkaz a vráť sa sem. (Skontroluj aj priečinok Spam.)`);
     await this.onLogin(data.user);
+  },
+
+  /* ── Návrat z e-mailového odkazu (overenie, obnova hesla) ──
+     Supabase vracia info buď v hash fragmente (#type=signup&…),
+     alebo v query parametroch (?type=…, ?error_description=…).
+     Po prečítaní URL vyčistíme, nech v adresnom riadku nezostávajú tokeny. */
+  readAuthLanding() {
+    const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+    const query = new URLSearchParams(location.search || '');
+    const get = k => hash.get(k) || query.get(k);
+    const out = {
+      type: get('type') || (get('code') ? 'signup' : null),
+      error: get('error_description') ? decodeURIComponent(get('error_description')).replace(/\+/g, ' ') : null,
+    };
+    if (out.error && /expired|invalid/i.test(out.error)) {
+      out.error = 'Odkaz je neplatný alebo expiroval. Zaregistruj sa znova, prípadne požiadaj o nový e-mail.';
+    }
+    if (out.type || out.error) history.replaceState(null, '', location.pathname);
+    return out;
+  },
+
+  /* Uvítacia obrazovka po úspešnom overení e-mailu */
+  welcomeVerified() {
+    setTimeout(() => App.modal(`
+      <div class="text-center">
+        <div class="text-5xl mb-3">🎉</div>
+        <h3 class="font-bold text-xl text-zinc-900 dark:text-white mb-1">E-mail overený — vitaj v G-Academy!</h3>
+        <p class="text-sm text-zinc-500 mb-5">Tvoj účet je aktívny a progres sa odteraz ukladá do cloudu — môžeš sa učiť z počítača aj mobilu.</p>
+        <div class="text-left rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-3 text-xs text-zinc-700 dark:text-zinc-300 mb-4">
+          <b class="text-indigo-400">Ako začať:</b>
+          <div class="mt-1 space-y-0.5">
+            <div>1. Vyplň krátku vstupnú diagnostiku — pripraví ti študijnú cestu</div>
+            <div>2. Drž sa denného plánu mentora na hlavnej obrazovke</div>
+            <div>3. Po každej lekcii ťa čaká mini test (5 otázok)</div>
+          </div>
+        </div>
+        <button onclick="App.closeModal()" class="btn-press w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">Poďme na to 🚀</button>
+      </div>`), 500);
   },
 
   /* Obrazovka nastavenia nového hesla — otvorí sa po kliknutí na
@@ -215,6 +260,8 @@ const Auth = {
     await this.sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
     this.renderGate('login', '✅ Ak účet existuje, poslali sme ti e-mail na obnovu hesla.');
   },
+
+  esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
 
   /* Preklad najčastejších chýb Supabase */
   slovak(msg) {
