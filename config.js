@@ -10,6 +10,6 @@
    chránia Row Level Security pravidlá zo súboru supabase-setup.sql).
    ═══════════════════════════════════════════════════════════════════ */
 window.GACADEMY_CONFIG = {
-  SUPABASE_URL: '',       // napr. 'https://abcdefgh.supabase.co'
-  SUPABASE_ANON_KEY: '',  // dlhý reťazec začínajúci 'eyJ…'
+  SUPABASE_URL: 'https://hbhmatwsoboxlkjbvwhd.supabase.co',       // napr. 'https://abcdefgh.supabase.co'
+  SUPABASE_ANON_KEY: 'sb_publishable_LqWOR3svcRwpNGLeUN_XPQ_bUOZ6PGV',  // dlhý reťazec začínajúci 'eyJ…'
 };
